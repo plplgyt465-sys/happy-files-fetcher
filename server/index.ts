@@ -205,47 +205,7 @@ Rules:
   "9": { name: "Data Agent", role: "data", systemPrompt: "You are Agent 9 — the Data Agent. Create data files, mock data, and API utilities. Respond ONLY with [FILE] blocks. Files should be .ts." },
 };
 
-async function callAI(systemPrompt: string, userMessage: string, history?: { role: string; content: string }[]): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error('No API key configured. Please set GEMINI_API_KEY in your environment secrets.');
-
-  const messages: { role: string; content: string }[] = [
-    { role: 'system', content: systemPrompt },
-  ];
-
-  if (history) {
-    for (const msg of history) {
-      messages.push({ role: msg.role === 'ai' ? 'assistant' : msg.role, content: msg.content });
-    }
-  }
-
-  messages.push({ role: 'user', content: userMessage });
-
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gemini-2.5-flash',
-      messages,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Gemini API error:', response.status, errorText);
-    if (response.status === 429) throw new Error('RATE_LIMIT');
-    if (response.status === 402) throw new Error('CREDITS_EXHAUSTED');
-    throw new Error(`AI returned status ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content || 'Could not get a response.';
-}
-
-// ─── Unofficial Gemini helpers ───────────────────────────────────────────────
+// ─── Unofficial Gemini (Bard) helpers ─────────────────────────────────────────
 
 const BARD_URL =
   'https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
@@ -262,22 +222,7 @@ function buildBardPayload(prompt: string): string {
     [prompt, 0, null, null, null, null, 0],
     ['en-US'],
     ['', '', '', null, null, null, null, null, null, ''],
-    '',
-    '',
-    null,
-    [0],
-    1,
-    null,
-    null,
-    1,
-    0,
-    null,
-    null,
-    null,
-    null,
-    null,
-    [[0]],
-    0,
+    '', '', null, [0], 1, null, null, 1, 0, null, null, null, null, null, [[0]], 0,
   ];
   const outer = [null, JSON.stringify(inner)];
   return new URLSearchParams({ 'f.req': JSON.stringify(outer) }).toString() + '&';
@@ -286,23 +231,18 @@ function buildBardPayload(prompt: string): string {
 function parseBardResponse(text: string): string {
   text = text.replace(")]}'", '');
   let best = '';
-
   for (const line of text.split('\n')) {
     if (!line.includes('wrb.fr')) continue;
     let data: unknown;
     try { data = JSON.parse(line); } catch { continue; }
-
     let entries: unknown[][] = [];
     if (Array.isArray(data)) {
       if ((data as unknown[])[0] === 'wrb.fr') {
         entries = [data as unknown[]];
       } else {
-        entries = (data as unknown[][]).filter(
-          (i) => Array.isArray(i) && i[0] === 'wrb.fr'
-        );
+        entries = (data as unknown[][]).filter((i) => Array.isArray(i) && i[0] === 'wrb.fr');
       }
     }
-
     for (const entry of entries) {
       try {
         const inner = JSON.parse(entry[2] as string);
@@ -320,7 +260,52 @@ function parseBardResponse(text: string): string {
   return best.trim();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+async function callAI(systemPrompt: string, userMessage: string, history?: { role: string; content: string }[]): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.LOVABLE_API_KEY;
+
+  if (apiKey) {
+    const messages: { role: string; content: string }[] = [
+      { role: 'system', content: systemPrompt },
+    ];
+    if (history) {
+      for (const msg of history) {
+        messages.push({ role: msg.role === 'ai' ? 'assistant' : msg.role, content: msg.content });
+      }
+    }
+    messages.push({ role: 'user', content: userMessage });
+
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gemini-2.5-flash', messages }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini API error:', response.status, errorText);
+      if (response.status === 429) throw new Error('RATE_LIMIT');
+      if (response.status === 402) throw new Error('CREDITS_EXHAUSTED');
+      throw new Error(`AI returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || 'Could not get a response.';
+  }
+
+  // Fall back to unofficial Gemini when no API key is configured
+  let conversationText = '';
+  if (history) {
+    for (const msg of history) {
+      conversationText += `${msg.role === 'ai' ? 'Assistant' : 'User'}: ${msg.content}\n\n`;
+    }
+  }
+  const fullPrompt = `${systemPrompt}\n\n${conversationText}User: ${userMessage}\n\nAssistant:`;
+  const payload = buildBardPayload(fullPrompt);
+  const response = await fetch(BARD_URL, { method: 'POST', headers: BARD_HEADERS, body: payload });
+  if (!response.ok) throw new Error(`Unofficial Gemini error: ${response.status}`);
+  const rawText = await response.text();
+  return parseBardResponse(rawText) || 'Could not get a response.';
+}
 
 function extractFileNames(response: string): string[] {
   const names: string[] = [];
