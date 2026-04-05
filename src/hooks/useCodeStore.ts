@@ -1,6 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useVersionControl } from './useVersionControl';
 import type { Dependency } from '@/components/DependencyManager';
+import { useAgentLoop, type AgentState, type AgentStep, STATE_LABELS } from './useAgentLoop';
+import { useStaticAnalysis } from './useStaticAnalysis';
+
+export type { AgentState, AgentStep };
 
 export interface CodeFile {
   id: string;
@@ -189,6 +193,8 @@ export function useCodeStore() {
   const [multiAgentMode, setMultiAgentMode] = useState(true);
   const [aiProvider, setAiProvider] = useState<AIProvider>('unofficial');
   const [agentProgress, setAgentProgress] = useState<string | null>(null);
+  const [agentCurrentState, setAgentCurrentState] = useState<AgentState>('idle');
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [errorLine, setErrorLine] = useState<{ file: string; line: number } | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -201,6 +207,8 @@ export function useCodeStore() {
   ]);
 
   const versionControl = useVersionControl(defaultFiles);
+  const agentLoop = useAgentLoop();
+  const diagnostics = useStaticAnalysis(files);
 
   const activeFile = files.find((f) => f.id === activeFileId) || files[0];
 
@@ -340,117 +348,141 @@ export function useCodeStore() {
     setChatMessages((prev) => [...prev, userMsg]);
     setIsAiLoading(true);
     setAgentProgress(null);
+    setAgentSteps([]);
+    setAgentCurrentState('analyzing');
+
+    let currentFiles: CodeFile[] = [];
+    setFiles((prev) => { currentFiles = prev; return prev; });
 
     try {
-      let currentFiles: CodeFile[] = [];
-      setFiles((prev) => {
-        currentFiles = prev;
-        return prev;
-      });
-      const filesPayload = currentFiles.map((f) => ({ name: f.name, content: f.content }));
-
-      const useMulti = multiAgentMode && shouldUseMultiAgent(content);
-      let functionName: string;
-      if (aiProvider === 'unofficial') {
-        functionName = 'gemini-unofficial';
-      } else {
-        functionName = useMulti ? 'multi-agent' : 'gemini-chat';
-      }
-      const rpcMode = useMulti ? 'multi' : 'single';
-
-      if (useMulti) {
+      // ── Multi-agent mode (orchestrator + parallel agents) ──────────────────
+      if (multiAgentMode && shouldUseMultiAgent(content)) {
         setAgentProgress('🤖 Agent 0 (Orchestrator) is planning...');
+
+        const recentHistory = chatMessages.slice(-20).map(m => ({ role: m.role, content: m.content }));
+        const response = await fetch('/api/multi-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: content,
+            files: currentFiles.map(f => ({ name: f.name, content: f.content })),
+            mode: 'multi',
+            history: recentHistory,
+          }),
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error || 'Multi-agent error');
+        }
+        const data = await response.json();
+        const rawReply = data?.reply || '';
+        const agentLogs: AgentLog[] = data?.agentLogs || [];
+        const { text, fileOps } = parseFileOperations(rawReply);
+
+        if (fileOps.length > 0) {
+          applyFileOperations(fileOps);
+          setTimeout(() => saveSnapshot(`Build: ${content.slice(0, 30)}`), 100);
+        }
+
+        setChatMessages((prev) => [...prev, {
+          id: (Date.now() + 1).toString(),
+          role: 'ai',
+          content: text || (fileOps.length > 0 ? '✅ تم البناء بنجاح' : rawReply),
+          timestamp: new Date(),
+          fileOps: fileOps.length > 0 ? fileOps : undefined,
+          agentLogs: agentLogs.length > 0 ? agentLogs : undefined,
+          mode,
+        }]);
+        return;
       }
 
-      // Send conversation history for context
-      const recentHistory = chatMessages.slice(-20).map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // ── ReAct Agent Loop (single-agent) ───────────────────────────────────
+      const result = await agentLoop.run(
+        content,
+        currentFiles,
+        diagnostics,
+        aiProvider,
+        // onStateChange
+        (state: AgentState, thought?: string) => {
+          setAgentCurrentState(state);
+          setAgentProgress(thought ? `${STATE_LABELS[state]} — ${thought}` : STATE_LABELS[state]);
+        },
+        // onStep
+        (step: AgentStep) => {
+          setAgentSteps((prev) => [...prev, step]);
+        },
+      );
 
-      const endpointMap: Record<string, string> = {
-        'multi-agent': '/api/multi-agent',
-        'gemini-unofficial': '/api/gemini-unofficial',
-        'gemini-chat': '/api/gemini-chat',
-      };
-      const endpoint = endpointMap[functionName] || '/api/gemini-unofficial';
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: content, files: filesPayload, mode: rpcMode, history: recentHistory }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error || 'Connection error');
-      }
-
-      const data = await response.json();
-      const rawReply = data?.reply || 'Could not get a response.';
-      const agentLogs: AgentLog[] = data?.agentLogs || [];
-      const { text, fileOps } = parseFileOperations(rawReply);
-
-      if (fileOps.length > 0) {
-        applyFileOperations(fileOps);
-        // Push version snapshot
-        const label = mode === 'FIX' ? `Fix: ${content.slice(0, 30)}` : mode === 'EDIT' ? `Edit: ${content.slice(0, 30)}` : `Create: ${content.slice(0, 30)}`;
+      if (result.fileOps.length > 0) {
+        applyFileOperations(result.fileOps);
+        const label = mode === 'FIX'
+          ? `Fix: ${content.slice(0, 30)}`
+          : mode === 'EDIT' ? `Edit: ${content.slice(0, 30)}` : `Create: ${content.slice(0, 30)}`;
         setTimeout(() => saveSnapshot(label), 100);
       }
 
-      const aiMsg: ChatMessage = {
+      // Build toolResults for display from steps
+      const toolResults = result.steps.map(s => ({
+        tool: s.tool,
+        success: true,
+        result: s.result,
+        duration: s.durationMs,
+      }));
+
+      setChatMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'ai',
-        content: text || (fileOps.length > 0 ? 'Changes applied! ✅' : rawReply),
+        content: result.text || (result.fileOps.length > 0 ? '✅ تم التنفيذ' : 'لا توجد تغييرات'),
         timestamp: new Date(),
-        fileOps: fileOps.length > 0 ? fileOps : undefined,
-        agentLogs: agentLogs.length > 0 ? agentLogs : undefined,
+        fileOps: result.fileOps.length > 0 ? result.fileOps : undefined,
+        toolResults: toolResults.length > 0 ? toolResults : undefined,
         mode,
-      };
-      setChatMessages((prev) => [...prev, aiMsg]);
-    } catch {
-      const aiMsg: ChatMessage = {
+      }]);
+
+    } catch (err) {
+      setChatMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'ai',
-        content: 'Sorry, a connection error occurred. Please try again.',
+        content: `❌ خطأ: ${String(err)}`,
         timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, aiMsg]);
+      }]);
     } finally {
       setIsAiLoading(false);
       setAgentProgress(null);
+      setAgentCurrentState('idle');
     }
-  }, [applyFileOperations, multiAgentMode, aiProvider, saveSnapshot]);
+  }, [applyFileOperations, multiAgentMode, aiProvider, saveSnapshot, agentLoop, diagnostics, chatMessages]);
 
-  const autoFixError = useCallback(async (errorDetails: { file: string; line: number | null; column: number | null; message: string; errorType: string; codeSnippet: string }, allFiles: CodeFile[]) => {
+  const autoFixError = useCallback(async (
+    errorDetails: { file: string; line: number | null; column: number | null; message: string; errorType: string; codeSnippet: string },
+    allFiles: CodeFile[],
+  ) => {
     if (errorDetails.file && errorDetails.line) {
       setErrorLine({ file: errorDetails.file, line: errorDetails.line });
     }
 
-    let fixPrompt = `🔧 AUTO-FIX REQUEST\n\n`;
-    fixPrompt += `❌ Error Type: ${errorDetails.errorType}\n`;
-    if (errorDetails.file) fixPrompt += `📁 File: ${errorDetails.file}\n`;
-    if (errorDetails.line) fixPrompt += `📍 Line: ${errorDetails.line}${errorDetails.column ? `, Column: ${errorDetails.column}` : ''}\n`;
-    fixPrompt += `💬 Error Message: ${errorDetails.message}\n`;
+    // Structured error payload — the agent loop will use FileRead + ErrorParser tools
+    const structuredError = {
+      file: errorDetails.file,
+      line: errorDetails.line,
+      column: errorDetails.column,
+      message: errorDetails.message,
+      type: errorDetails.errorType,
+      codeSnippet: errorDetails.codeSnippet,
+    };
 
-    if (errorDetails.codeSnippet) {
-      fixPrompt += `\n--- Code around the error ---\n${errorDetails.codeSnippet}\n--- End code context ---\n`;
-    }
+    const fixPrompt = [
+      `🔧 AUTO-FIX`,
+      ``,
+      `ERROR:`,
+      JSON.stringify(structuredError, null, 2),
+      ``,
+      `Fix this ${errorDetails.errorType} error. Read the file, fix the exact line, verify no new errors.`,
+    ].join('\n');
 
-    if (errorDetails.file) {
-      const errorFile = allFiles.find(f => f.name === errorDetails.file);
-      if (errorFile) {
-        fixPrompt += `\n--- Full content of ${errorDetails.file} ---\n${errorFile.content}\n--- End full content ---\n`;
-      }
-    }
-
-    fixPrompt += `\nFix this ${errorDetails.errorType} error and return the full corrected files using [FILE:filename.ext] blocks. Focus on the specific error location. IMPORTANT: Do not escape normal code characters with markdown backslashes.`;
-
-    const prevMode = multiAgentMode;
-    setMultiAgentMode(false);
     await sendMessage(fixPrompt);
-    setMultiAgentMode(prevMode);
     setErrorLine(null);
-  }, [sendMessage, multiAgentMode]);
+  }, [sendMessage]);
 
   return {
     files,
@@ -470,6 +502,9 @@ export function useCodeStore() {
     aiProvider,
     setAiProvider,
     agentProgress,
+    agentCurrentState,
+    agentSteps,
+    diagnostics,
     errorLine,
     // Version control
     versionControl,

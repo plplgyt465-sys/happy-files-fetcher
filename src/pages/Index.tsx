@@ -10,7 +10,6 @@ import VersionBar from '@/components/VersionBar';
 import ConsolePanel from '@/components/ConsolePanel';
 import ToolsPanel from '@/components/ToolsPanel';
 import { useCodeStore } from '@/hooks/useCodeStore';
-import { useStaticAnalysis } from '@/hooks/useStaticAnalysis';
 import { useToolSystem } from '@/hooks/useToolSystem';
 import { useSkillSystem } from '@/hooks/useSkillSystem';
 import type { ErrorDetails } from '@/components/LivePreview';
@@ -34,6 +33,9 @@ const Index = () => {
     aiProvider,
     setAiProvider,
     agentProgress,
+    agentCurrentState,
+    agentSteps,
+    diagnostics,
     errorLine,
     versionControl,
     handleUndo,
@@ -47,9 +49,6 @@ const Index = () => {
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(false);
   const [runtimeErrors, setRuntimeErrors] = useState<ErrorDetails[]>([]);
-
-  // Static analysis
-  const diagnostics = useStaticAnalysis(files);
 
   // Tool system
   const toolSystem = useToolSystem(
@@ -98,6 +97,8 @@ const Index = () => {
             multiAgentMode={multiAgentMode}
             onToggleMultiAgent={setMultiAgentMode}
             agentProgress={agentProgress}
+            agentCurrentState={agentCurrentState}
+            agentSteps={agentSteps}
             aiProvider={aiProvider}
             onChangeProvider={setAiProvider}
           />

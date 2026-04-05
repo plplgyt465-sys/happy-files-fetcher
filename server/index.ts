@@ -330,6 +330,152 @@ function extractFileNames(response: string): string[] {
   return names;
 }
 
+// ─── Agent Think Endpoint (ReAct Loop) ───────────────────────────────────────
+
+const AGENT_SYSTEM_PROMPT = `You are an autonomous React/TypeScript coding agent running inside a ReAct (Reason + Act) loop.
+
+CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no backticks, no explanations outside the JSON.
+
+You follow these states in order:
+1. "analyzing"  — Understand the user's request
+2. "reading"    — Read files to understand the codebase  
+3. "planning"   — Plan what changes are needed
+4. "editing"    — Write/modify files
+5. "verifying"  — Check for errors after changes
+
+RESPONSE FORMAT — choose one each turn:
+
+To call a tool:
+{"type":"tool","tool":"TOOL_NAME","input":{...},"thought":"Your reasoning here","state":"analyzing|reading|planning|editing|verifying"}
+
+To finish (ONLY when all changes are complete and verified):
+{"type":"final","thought":"Summary of everything done","response":"Message to show the user","files":[{"name":"App.tsx","content":"COMPLETE file content here"}]}
+
+AVAILABLE TOOLS:
+- FileList:   {}                                        — List all project files
+- FileRead:   {"fileName":"App.tsx"}                    — Read a file's full content
+- FileWrite:  {"fileName":"New.tsx","content":"..."}    — Create or overwrite a file (COMPLETE content only)
+- SearchCode: {"query":"useState"}                      — Search code across all files
+- ErrorParser: {}                                       — Get all current errors and warnings
+- ProjectInfo: {}                                       — Get project structure and stats
+
+MANDATORY RULES:
+1. Start EVERY session with FileList to understand the project structure
+2. ALWAYS use FileRead before modifying a file — never guess content
+3. When writing files, include the COMPLETE file content — no partial snippets
+4. After making file changes, call ErrorParser to check for errors
+5. Fix all errors before sending a "final" response
+6. The "files" array in "final" should contain ALL files you modified/created
+7. Respond in the SAME LANGUAGE as the user (Arabic → Arabic, English → English)
+8. Do NOT escape code characters with backslashes in file content
+9. Max 12 tool calls before you MUST send a "final" response`;
+
+app.post('/api/agent/think', async (req, res) => {
+  try {
+    const { messages, files, diagnostics, provider } = req.body;
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    const filesContext = Array.isArray(files)
+      ? files.map((f: { name: string; content: string }) =>
+          `--- ${f.name} ---\n${f.content}`
+        ).join('\n\n')
+      : '';
+
+    const errorsContext = Array.isArray(diagnostics) && diagnostics.length > 0
+      ? `\nCURRENT ERRORS:\n${JSON.stringify(diagnostics.slice(0, 10), null, 2)}`
+      : '';
+
+    const projectContext = filesContext
+      ? `\nPROJECT FILES:\n${filesContext}${errorsContext}`
+      : errorsContext;
+
+    const systemWithContext = AGENT_SYSTEM_PROMPT + projectContext;
+
+    // Build the full prompt for unofficial API
+    const conversationText = (messages as {role:string;content:string}[])
+      .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`)
+      .join('\n\n');
+
+    const fullPrompt = `${systemWithContext}\n\n${conversationText}\n\nAgent:`;
+
+    let rawReply = '';
+
+    const useOfficial = provider === 'official';
+
+    if (useOfficial) {
+      const apiKey = process.env.GEMINI_API_KEY || process.env.LOVABLE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: 'No API key configured for official mode' });
+      }
+      const apiMessages = [
+        { role: 'system', content: systemWithContext },
+        ...(messages as {role:string;content:string}[]).map(m => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: m.content,
+        })),
+      ];
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'gemini-2.5-flash', messages: apiMessages }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        return res.status(502).json({ error: `AI error: ${response.status} — ${errText.slice(0, 200)}` });
+      }
+      const data = await response.json();
+      rawReply = data?.choices?.[0]?.message?.content || '';
+    } else {
+      // Unofficial Bard
+      const payload = buildBardPayload(fullPrompt);
+      const response = await fetch(BARD_URL, { method: 'POST', headers: BARD_HEADERS, body: payload });
+      if (!response.ok) {
+        const errText = await response.text();
+        return res.status(502).json({ error: `Unofficial Gemini error: ${response.status}` });
+      }
+      const rawText = await response.text();
+      rawReply = parseBardResponse(rawText);
+    }
+
+    // Parse JSON decision from reply
+    let decision: Record<string, unknown>;
+    try {
+      // Strip markdown code fences if present
+      let cleaned = rawReply.trim()
+        .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+      // Find first { to last }
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start !== -1 && end !== -1) cleaned = cleaned.slice(start, end + 1);
+      decision = JSON.parse(cleaned);
+    } catch {
+      // Fallback: if AI returned file blocks instead of JSON, wrap as final
+      const fileRegex = /\[FILE:([\w.\-/]+)\]\n([\s\S]*?)\n?\[\/FILE\]/g;
+      const files: { name: string; content: string }[] = [];
+      let match;
+      while ((match = fileRegex.exec(rawReply)) !== null) {
+        files.push({ name: match[1].trim(), content: match[2] });
+      }
+      const text = rawReply.replace(/\[FILE:[\w.\-/]+\][\s\S]*?\[\/FILE\]/g, '').trim();
+      decision = {
+        type: 'final',
+        thought: 'Completed',
+        response: text || rawReply.slice(0, 500),
+        files,
+      };
+    }
+
+    return res.json(decision);
+  } catch (err) {
+    console.error('agent/think error:', err);
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.post('/api/gemini-unofficial', async (req, res) => {
   try {
     const { prompt, files, mode, history } = req.body;

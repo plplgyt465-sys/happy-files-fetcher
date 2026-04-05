@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Loader2, FilePlus, FileEdit, Cpu, Users, Wrench, CheckCircle, XCircle, Zap, Globe } from 'lucide-react';
-import type { ChatMessage, AgentLog, ToolCallResult, AIProvider } from '@/hooks/useCodeStore';
+import { Send, Bot, User, Sparkles, Loader2, FilePlus, FileEdit, Cpu, Users, Wrench, CheckCircle, XCircle, Zap, Globe, Eye, Pencil, Search, ShieldCheck, Brain } from 'lucide-react';
+import type { ChatMessage, AgentLog, ToolCallResult, AIProvider, AgentState, AgentStep } from '@/hooks/useCodeStore';
+import { STATE_LABELS } from '@/hooks/useAgentLoop';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -9,6 +10,8 @@ interface ChatPanelProps {
   multiAgentMode?: boolean;
   onToggleMultiAgent?: (enabled: boolean) => void;
   agentProgress?: string | null;
+  agentCurrentState?: AgentState;
+  agentSteps?: AgentStep[];
   aiProvider?: AIProvider;
   onChangeProvider?: (provider: AIProvider) => void;
 }
@@ -34,7 +37,27 @@ const AgentLogsDisplay = ({ logs }: { logs: AgentLog[] }) => (
   </div>
 );
 
-const ChatPanel = ({ messages, onSendMessage, isLoading, multiAgentMode, onToggleMultiAgent, agentProgress, aiProvider = 'official', onChangeProvider }: ChatPanelProps) => {
+const STATE_ICONS: Partial<Record<AgentState, React.ReactNode>> = {
+  analyzing: <Brain className="w-3.5 h-3.5 text-violet-400" />,
+  reading:   <Eye className="w-3.5 h-3.5 text-blue-400" />,
+  planning:  <Cpu className="w-3.5 h-3.5 text-yellow-400" />,
+  editing:   <Pencil className="w-3.5 h-3.5 text-cyan-400" />,
+  verifying: <ShieldCheck className="w-3.5 h-3.5 text-green-400" />,
+  done:      <CheckCircle className="w-3.5 h-3.5 text-green-400" />,
+  error:     <XCircle className="w-3.5 h-3.5 text-red-400" />,
+};
+
+const TOOL_ICONS: Record<string, React.ReactNode> = {
+  FileList:   <Search className="w-3 h-3 text-blue-400" />,
+  FileRead:   <Eye className="w-3 h-3 text-blue-400" />,
+  FileWrite:  <Pencil className="w-3 h-3 text-cyan-400" />,
+  FileCreate: <FilePlus className="w-3 h-3 text-green-400" />,
+  ErrorParser:<ShieldCheck className="w-3 h-3 text-orange-400" />,
+  SearchCode: <Search className="w-3 h-3 text-purple-400" />,
+  ProjectInfo:<Cpu className="w-3 h-3 text-yellow-400" />,
+};
+
+const ChatPanel = ({ messages, onSendMessage, isLoading, multiAgentMode, onToggleMultiAgent, agentProgress, agentCurrentState = 'idle', agentSteps = [], aiProvider = 'official', onChangeProvider }: ChatPanelProps) => {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -150,11 +173,38 @@ const ChatPanel = ({ messages, onSendMessage, isLoading, multiAgentMode, onToggl
           </div>
         ))}
         {isLoading && (
-          <div className="flex flex-col gap-1.5 text-muted-foreground text-sm">
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{agentProgress || 'Thinking...'}</span>
+          <div className="flex flex-col gap-2 text-sm">
+            {/* Current state badge */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/60 border border-border/40">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+              <div className="flex items-center gap-1.5 min-w-0">
+                {agentCurrentState !== 'idle' && STATE_ICONS[agentCurrentState]}
+                <span className="text-xs text-foreground/80 truncate">
+                  {agentProgress || STATE_LABELS[agentCurrentState] || 'يفكر...'}
+                </span>
+              </div>
             </div>
+
+            {/* Live tool call steps */}
+            {agentSteps.length > 0 && (
+              <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
+                {agentSteps.slice(-6).map((step, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 px-2 py-1 rounded bg-secondary/30 text-[11px] text-muted-foreground"
+                  >
+                    {TOOL_ICONS[step.tool] || <Wrench className="w-3 h-3" />}
+                    <span className="font-mono text-foreground/70">{step.tool}</span>
+                    {step.input && Object.keys(step.input).length > 0 && (
+                      <span className="text-[10px] text-primary/60 truncate ml-1">
+                        {Object.values(step.input).slice(0, 1).join(' ').slice(0, 25)}
+                      </span>
+                    )}
+                    <span className="ml-auto text-[9px] text-green-400/60">{step.durationMs}ms</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         <div ref={bottomRef} />
