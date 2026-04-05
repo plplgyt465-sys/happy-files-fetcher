@@ -15,6 +15,7 @@ export type AgentState =
   | 'building'
   | 'detecting'
   | 'fixing'
+  | 'reflecting'
   | 'verifying'
   | 'memory'
   | 'finalizing'
@@ -55,14 +56,15 @@ export const STATE_LABELS: Record<AgentState, string> = {
   idle:       'Idle',
   intent:     '🧠 يفهم الطلب...',
   context:    '📂 يجمع السياق...',
-  planning:   '📋 يخطط...',
+  planning:   '📋 يخطط ويضع المعايير...',
   selecting:  '🔧 يختار الأدوات...',
   executing:  '⚙️ ينفذ ويكتب الملفات...',
-  building:   '🏗️ يتحقق من البنية...',
+  building:   '🏗️ يبني الهيكل الرئيسي...',
   detecting:  '🔍 يكشف الأخطاء...',
   fixing:     '🩺 يصلح تلقائياً...',
-  verifying:  '✅ يتحقق من النتيجة...',
-  memory:     '🧠 يحدث الذاكرة...',
+  reflecting: '🪞 يفكر ويراجع ما أنجز...',
+  verifying:  '✅ يتحقق من اكتمال المهمة...',
+  memory:     '🧠 يحفظ السياق...',
   finalizing: '🏁 يُنهي المهمة...',
   done:       '✅ اكتملت المهمة',
   error:      '❌ خطأ',
@@ -81,6 +83,8 @@ function mapPhase(p: string | undefined): AgentState {
     parsing:    'detecting',
     fixing:     'fixing',
     fix:        'fixing',
+    reflecting: 'reflecting',
+    reflect:    'reflecting',
     verifying:  'verifying',
     verify:     'verifying',
     memory:     'memory',
@@ -311,11 +315,129 @@ function executeTool(
   // ── PlanCreate ────────────────────────────────────────────────────────
   if (t === 'plancreate' || t === 'plan') {
     const steps = Array.isArray(input.steps) ? (input.steps as string[]) : [];
-    memory.set('__plan__', JSON.stringify(steps));
-    return { success: true, plan: steps, stepsCount: steps.length, message: 'Plan recorded' };
+    const goal = String(input.goal || '');
+    const successCriteria = Array.isArray(input.success_criteria) ? (input.success_criteria as string[]) : [];
+    const minFiles = Number(input.minimum_files || 6);
+    memory.set('__plan__', JSON.stringify({ steps, goal, successCriteria, minFiles }));
+    if (goal) memory.set('__goal__', goal);
+    if (successCriteria.length) memory.set('__criteria__', JSON.stringify(successCriteria));
+    memory.set('__min_files__', String(minFiles));
+    return { success: true, plan: steps, goal, successCriteria, minFiles, stepsCount: steps.length };
   }
 
-  return { error: `Unknown tool: '${tool}'. Available: FileList, FileRead, FileWrite, FileEdit, FileDelete, GlobTool, GrepTool, ErrorParser, TSChecker, ProjectInfo, SearchCode, MemoryStore, MemoryRead, PlanCreate` };
+  // ── ReflectTool ─────────────────────────────────────────────────────────
+  if (t === 'reflecttool' || t === 'reflect') {
+    const what_done    = String(input.what_done    || '');
+    const what_missing = String(input.what_missing || '');
+    const next         = String(input.next         || 'continue');
+    const lm = what_missing.toLowerCase().trim();
+    const has_missing  = lm !== '' && lm !== 'none' && lm !== 'nothing' && lm !== 'n/a' && lm !== '-';
+    memory.set('__reflection__', JSON.stringify({ what_done, what_missing, next, ts: Date.now() }));
+    return {
+      stored: true,
+      has_missing_work: has_missing,
+      action_required: has_missing
+        ? 'CONTINUE — missing work detected, keep writing files'
+        : 'READY — all work complete, proceed to GoalCheckTool',
+      reflection: { what_done, what_missing, next },
+    };
+  }
+
+  // ── GoalCheckTool ────────────────────────────────────────────────────────
+  if (t === 'goalchecktool' || t === 'goalcheck') {
+    const criteria  = Array.isArray(input.criteria) ? (input.criteria as string[]) : [];
+    const minFiles  = Number(memory.get('__min_files__') || 6);
+    const errorCount = diagnostics.filter(d => d.severity === 'error').length;
+    const results: { criterion: string; met: boolean; detail: string }[] = [];
+
+    for (const criterion of criteria) {
+      const lc = criterion.toLowerCase();
+
+      if (lc.includes('no error') || lc.includes('0 error') || lc.includes('errors = 0')) {
+        results.push({ criterion, met: errorCount === 0, detail: `${errorCount} errors` });
+        continue;
+      }
+
+      if (lc.includes('app.tsx') && (lc.includes('updated') || lc.includes('rewritten') || lc.includes('no counter') || lc.includes('no default'))) {
+        const app = workingFiles.find(f => f.name === 'App.tsx');
+        const isDefault = !app || app.content.includes('Count:') || (app.content.includes('count') && app.content.includes('setCount') && !app.content.includes('Route'));
+        results.push({ criterion, met: !isDefault, detail: isDefault ? 'App.tsx still has default counter — MUST rewrite' : 'App.tsx has been rewritten' });
+        continue;
+      }
+
+      if (lc.includes('routing') || lc.includes('router') || lc.includes('route')) {
+        const app = workingFiles.find(f => f.name === 'App.tsx');
+        const hasRouting = !!(app?.content.includes('Route') || app?.content.includes('Router') || app?.content.includes('BrowserRouter'));
+        results.push({ criterion, met: hasRouting, detail: hasRouting ? 'Routing found in App.tsx' : 'No routing — add react-router-dom' });
+        continue;
+      }
+
+      if (lc.includes('app.css') && (lc.includes('updated') || lc.includes('rewritten'))) {
+        const css = workingFiles.find(f => f.name === 'App.css');
+        const isDefault = !css || css.content.includes('.app {') && css.content.length < 500;
+        results.push({ criterion, met: !isDefault, detail: isDefault ? 'App.css still has placeholder' : 'App.css updated' });
+        continue;
+      }
+
+      if (lc.match(/\d+\+?\s*files/) || lc.includes('minimum files') || lc.includes('enough files') || lc.includes('6+ files') || lc.includes('multiple files')) {
+        const numMatch = lc.match(/(\d+)/);
+        const required = numMatch ? parseInt(numMatch[1]) : minFiles;
+        results.push({ criterion, met: workingFiles.length >= required, detail: `${workingFiles.length} files exist (need ${required})` });
+        continue;
+      }
+
+      results.push({ criterion, met: workingFiles.length >= minFiles, detail: `${workingFiles.length} files` });
+    }
+
+    const allMet = results.every(r => r.met);
+    const readyToFinalize = allMet && errorCount === 0;
+
+    return {
+      criteria: results,
+      all_met: allMet,
+      errors: errorCount,
+      file_count: workingFiles.length,
+      ready_to_finalize: readyToFinalize,
+      summary: readyToFinalize
+        ? '✅ All criteria met — safe to send final'
+        : `❌ NOT ready — ${results.filter(r => !r.met).map(r => r.detail).join('; ')}`,
+    };
+  }
+
+  // ── VerifyCodeTool ───────────────────────────────────────────────────────
+  if (t === 'verifycodetool' || t === 'verifycode') {
+    const pattern = String(input.pattern || input.check || '');
+    const inFile  = String(input.inFile  || input.file  || '');
+    if (!pattern) return { error: 'pattern is required' };
+
+    const targetFiles = inFile
+      ? workingFiles.filter(f => f.name === inFile)
+      : workingFiles;
+
+    let regex: RegExp;
+    try   { regex = new RegExp(pattern, 'i'); }
+    catch { regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); }
+
+    const results: { file: string; found: boolean; line?: number; snippet?: string }[] = [];
+    for (const f of targetFiles) {
+      const lines = f.content.split('\n');
+      let found = false;
+      let foundLine: number | undefined;
+      let snippet: string | undefined;
+      for (let i = 0; i < lines.length; i++) {
+        if (regex.test(lines[i])) {
+          found = true; foundLine = i + 1; snippet = lines[i].trim().slice(0, 80);
+          break;
+        }
+      }
+      results.push({ file: f.name, found, line: foundLine, snippet });
+    }
+
+    const anyFound = results.some(r => r.found);
+    return { pattern, inFile: inFile || 'all files', found: anyFound, count: results.filter(r => r.found).length, results };
+  }
+
+  return { error: `Unknown tool: '${tool}'. Available: FileList, FileRead, FileWrite, FileEdit, FileDelete, GlobTool, GrepTool, ErrorParser, TSChecker, ProjectInfo, SearchCode, MemoryStore, MemoryRead, PlanCreate, ReflectTool, GoalCheckTool, VerifyCodeTool` };
 }
 
 // ── Main hook ──────────────────────────────────────────────────────────────
@@ -496,6 +618,33 @@ export function useAgentLoop() {
             success: true,
           }),
         });
+
+        // ── Smart Stop Condition ──────────────────────────────────────────
+        // If GoalCheckTool says ready_to_finalize=true, inject a strong system
+        // hint so the AI knows it MUST send "final" on the very next turn.
+        if ((tl === 'goalchecktool' || tl === 'goalcheck') && (toolResult as Record<string, unknown>).ready_to_finalize === true) {
+          messages.push({
+            role: 'user',
+            content: JSON.stringify({
+              type: 'system',
+              message: '✅ SMART STOP: GoalCheckTool confirmed all criteria are met and 0 errors. You MUST now send the "final" JSON response immediately. Do NOT call any more tools.',
+            }),
+          });
+        }
+
+        // Also stop if ReflectTool says has_missing_work is false and
+        // the project already has 6+ files (safety net for lazy agents)
+        if ((tl === 'reflecttool' || tl === 'reflect') &&
+            (toolResult as Record<string, unknown>).has_missing_work === false &&
+            workingFiles.length >= 6) {
+          messages.push({
+            role: 'user',
+            content: JSON.stringify({
+              type: 'system',
+              message: `🪞 REFLECTION PASSED: No missing work. ${workingFiles.length} files exist. Now call GoalCheckTool to confirm all criteria, then send "final".`,
+            }),
+          });
+        }
       }
     }
 

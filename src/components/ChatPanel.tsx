@@ -46,6 +46,7 @@ const STATE_ICONS: Partial<Record<AgentState, React.ReactNode>> = {
   building:   <Hammer className="w-3.5 h-3.5 text-amber-400" />,
   detecting:  <Bug className="w-3.5 h-3.5 text-red-400" />,
   fixing:     <Wand2 className="w-3.5 h-3.5 text-pink-400" />,
+  reflecting: <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />,
   verifying:  <ShieldCheck className="w-3.5 h-3.5 text-green-400" />,
   memory:     <Database className="w-3.5 h-3.5 text-indigo-400" />,
   finalizing: <Flag className="w-3.5 h-3.5 text-emerald-400" />,
@@ -73,6 +74,9 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   MemoryStore: <Database className="w-3 h-3 text-indigo-400" />,
   MemoryRead:  <Database className="w-3 h-3 text-indigo-300" />,
   PlanCreate:  <ListChecks className="w-3 h-3 text-yellow-400" />,
+  ReflectTool:   <Sparkles className="w-3 h-3 text-fuchsia-400" />,
+  GoalCheckTool: <Zap className="w-3 h-3 text-emerald-400" />,
+  VerifyCodeTool:<ShieldCheck className="w-3 h-3 text-teal-400" />,
 };
 
 const ChatPanel = ({ messages, onSendMessage, isLoading, multiAgentMode, onToggleMultiAgent, agentProgress, agentCurrentState = 'idle', agentSteps = [], aiProvider = 'official', onChangeProvider }: ChatPanelProps) => {

@@ -1,0 +1,33 @@
+I Chat
+
+Free
+
+10 Agents
+👋 مرحباً بك في **VibeCode**!
+
+🤖 **Ω — Advanced Autonomous Coding Agent**
+يفهم → يخطط → ينفذ → يتحقق → يصلّح → يكرر
+
+🔁 **12 مرحلة ذكاء متكاملة:**
+🧠 Intent → 📂 Context → 📋 Planning → 🔧 Selecting → ⚙️ Executing → 🏗️ Building → 🔍 Detecting → 🩺 Fixing → ✅ Verifying → 🧠 Memory → 🏁 Finalizing
+
+🛠️ **14 أداة**: FileWrite, FileEdit, GlobTool, GrepTool, TSChecker, ErrorParser, MemoryStore, PlanCreate, والمزيد!
+
+⚡ ينشئ **عدد غير محدود** من الملفات، يصلح الأخطاء تلقائياً، ويتذكر السياق.
+
+جرّب: "أنشئ متجر إلكتروني" أو "ابنِ تطبيق todo كامل"!
+
+انشاء موقع مطعم احترافي
+
+{"type":"tool","tool":"FileWrite","input":{"fileName":"src/data/mockData.ts","content":"import { Dish, RestaurantInfo } from '../types/restaurant';\\n\\nexport const restaurantInfo: RestaurantInfo = {\\n  name: 'مطعم الشرق الأصيل',\\n  address: 'شارع التحلية، الرياض، المملكة العربية السعودية',\\n  phone: '+966 11 234 5678',\\n  email: 'info@alsharq-restaurant.com',\\n  openingHours: {\\n    weekdays: '12:00 PM - 11:00 PM',\\n    weekend: '1:00 PM - 12:00 AM'\\n  }\\n};\\n\\nexport const menuItems: Dish[] = [\\n  {\\n    id: 1,\\n    name: 'حمص باللحمة',\\n    description: 'حمص كريمي مغطى بقطع لحم الضأن المقلية والصنوبر',\\n    price: 35,\\n    category: 'appetizer',\\n    image: '[https://images.unsplash.com/photo-1577906030559-6acd675ee182?auto=format\&fit=crop\&q=80\&w=800](https://www.google.com/search?q=https://images.unsplash.com/photo-1577906030559-6acd675ee182%3Fauto%3Dformat%26fit%3Dcrop%26q%3D80%26w%3D800)',\\n    isPopular: true\\n  },\\n  {\\n    id: 2,\\n    name: 'كبة مقلية',\\n    description: 'أربع قطع من الكبة المقرمشة المحشوة باللحم والمكسرات',\\n    price: 28,\\n    category: 'appetizer',\\n    image: '[https://images.unsplash.com/photo-1601063458289-77247ba485ec?auto=format\&fit=crop\&q=80\&w=800](https://www.google.com/search?q=https://images.unsplash.com/photo-1601063458289-77247ba485ec%3Fauto%3Dformat%26fit%3Dcrop%26q%3D80%26w%3D800)'\\n  },\\n  {\\n    id: 3,\\n    name: 'مشاوي مشكلة',\\n    description: 'سيخ كباب، سيخ شيش طاووق، وريش غنم تقدم مع الأرز',\\n    price: 85,\\n    category: 'main',\\n    image: '[https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format\&fit=crop\&q=80\&w=800](https://www.google.com/search?q=https://images.unsplash.com/photo-1555939594-58d7cb561ad1%3Fauto%3Dformat%26fit%3Dcrop%26q%3D80%26w%3D800)',\\n    isPopular: true\\n  },\\n  {\\n    id: 4,\\n    name: 'كنافة بالجبن',\\n    description: 'كنافة ساخنة بجبنة عكاوي وقطر محلى بالفستق',\\n    price: 30,\\n    category: 'dessert',\\n    image: '[https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format\&fit=crop\&q=80\&w=800](https://www.google.com/search?q=https://images.unsplash.com/photo-1512621776951-a57141f2eefd%3Fauto%3Dformat%26fit%3Dcrop%26q%3D80%26w%3D800)'\\n  }\\n];"},"thought":"سأقوم بإنشاء ملف البيانات التجريبية (Mock Data) ليشمل معلومات المطعم وقائمة الطعام الأولية، مما سيسمح لي ببناء الواجهات وعرض المحتوى بشكل واقعي فوراً.","phase":"executing"}
+
+src/types/restaurant.ts
+Created
+Tool Calls
+ProjectInfo
+4ms
+PlanCreate
+0ms
+FileWrite
+0ms
+FileWrite

@@ -201,7 +201,7 @@ export function useCodeStore() {
     {
       id: '1',
       role: 'ai',
-      content: '👋 مرحباً بك في **VibeCode**!\n\n🤖 **Ω — Advanced Autonomous Coding Agent**\nيفهم → يخطط → ينفذ → يتحقق → يصلّح → يكرر\n\n🔁 **12 مرحلة ذكاء متكاملة:**\n🧠 Intent → 📂 Context → 📋 Planning → 🔧 Selecting → ⚙️ Executing → 🏗️ Building → 🔍 Detecting → 🩺 Fixing → ✅ Verifying → 🧠 Memory → 🏁 Finalizing\n\n🛠️ **14 أداة**: FileWrite, FileEdit, GlobTool, GrepTool, TSChecker, ErrorParser, MemoryStore, PlanCreate, والمزيد!\n\n⚡ ينشئ **عدد غير محدود** من الملفات، يصلح الأخطاء تلقائياً، ويتذكر السياق.\n\nجرّب: "أنشئ متجر إلكتروني" أو "ابنِ تطبيق todo كامل"!',
+      content: '👋 مرحباً بك في **VibeCode**!\n\n🧠 **Ω — Intelligent Autonomous Coding Agent**\nيفهم → يخطط → ينفذ → يعكس → يتحقق → يصلّح → يكرر\n\n🔁 **13 مرحلة ذكاء متكاملة:**\n🧠 Intent → 📂 Context → 📋 Planning → 🔧 Selecting → ⚙️ Executing → 🏗️ Building → 🔍 Detecting → 🩺 Fixing → 🪞 Reflecting → ✅ Verifying → 🧠 Memory → 🏁 Finalizing\n\n🛠️ **17 أداة**: FileWrite, FileEdit, GlobTool, GrepTool, TSChecker, ErrorParser, MemoryStore, PlanCreate, **ReflectTool, GoalCheckTool, VerifyCodeTool** والمزيد!\n\n🚨 **بيئة نظيفة**: يُعيد كتابة App.tsx/App.css دائماً — لا ملفات افتراضية!\n🎯 **تتبع الأهداف**: يضع معايير النجاح ولا يتوقف إلا عند اكتمالها.\n🪞 **التأمل الذاتي**: يراجع ما أنجز ويكتشف ما ينقص تلقائياً.\n⚡ **توقف ذكي**: يتوقف فقط عندما: لا أخطاء + App.tsx محدّث + 6+ ملفات + كل المعايير مكتملة.\n\nجرّب: "أنشئ موقع مطعم احترافي" أو "ابنِ تطبيق todo كامل"!',
       timestamp: new Date(),
     },
   ]);
