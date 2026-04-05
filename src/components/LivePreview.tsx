@@ -95,6 +95,8 @@ const IFRAME_RUNTIME = `
     }, "*");
   }
 
+  var lastErrorMessage = "";
+
   function resolve(name) {
     var n = name.replace(/^\\.\\/?/, "");
     if (modules[n]) return n;
@@ -192,14 +194,22 @@ const IFRAME_RUNTIME = `
       if (!mod.exports.default && Object.keys(mod.exports).length === 0) {
         mod.exports.default = mod.exports;
       }
-    } catch(e) { reportError(r, e && e.message ? e.message : String(e)); }
+    } catch(e) {
+      var message = e && e.message ? e.message : String(e);
+      if (message && message === lastErrorMessage) return mod.exports;
+      lastErrorMessage = message;
+      reportError(r, message);
+    }
     return mod.exports;
   }
 
   try {
     req(entryName);
     if (!hasError) window.parent.postMessage({ type: "preview-success" }, "*");
-  } catch(e) { reportError("", e && e.message ? e.message : String(e)); }
+  } catch(e) {
+    var message = e && e.message ? e.message : String(e);
+    if (message) reportError("", message);
+  }
 })();
 `;
 
