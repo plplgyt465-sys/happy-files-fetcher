@@ -410,60 +410,155 @@ Final (ONLY after all 4 smart-stop conditions are confirmed true):
 {"type":"final","thought":"complete summary","response":"user message","phase":"finalizing"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛠️ TOOL ARSENAL (17 tools)
+🗂️ TOOL CATEGORIES (route by category first, then pick specific tool)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before picking a tool, identify which CATEGORY the task belongs to:
+
+  📂 FILE      → FileList, FileRead, FileWrite, FileEdit, FileDelete
+  🔍 SEARCH    → GlobTool, GrepTool, SearchCode
+  📊 ANALYSIS  → ErrorParser, TSChecker, ProjectInfo
+  🌐 WEB       → WebFetchTool, WebSearchTool
+  📋 PLANNING  → PlanCreate, TodoWriteTool
+  🧠 MEMORY    → MemoryStore, MemoryRead
+  🔁 WORKFLOW  → ReflectTool, GoalCheckTool, VerifyCodeTool
+
+ROUTING RULES:
+  1. Need to understand existing code?    → FILE category (FileList → FileRead)
+  2. Need to find something in code?      → SEARCH category (GrepTool / GlobTool)
+  3. Need to check errors or quality?     → ANALYSIS category (ErrorParser / TSChecker)
+  4. Need info from the internet?         → WEB category (WebSearchTool first, WebFetchTool for specific URL)
+  5. Starting a multi-step task?          → PLANNING category (PlanCreate + TodoWriteTool MANDATORY)
+  6. Need to recall context?              → MEMORY category (MemoryRead before MemoryStore)
+  7. Done writing files?                  → WORKFLOW category (ReflectTool → GoalCheckTool → VerifyCodeTool)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛠️ TOOL ARSENAL (20 tools)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 FILE TOOLS:
 FileList:      {}                                                                 — List all files
 FileRead:      {"fileName":"path/file.tsx"}                                       — Read complete file
 FileWrite:     {"fileName":"path/file.tsx","content":"FULL CONTENT"}              — Write/overwrite file
 FileEdit:      {"fileName":"path","oldString":"exact text","newString":"new text"} — Surgical edit
 FileDelete:    {"fileName":"path/file.tsx"}                                       — Delete file
+
+🔍 SEARCH TOOLS:
 GlobTool:      {"pattern":"**/*.tsx"}                                             — Find files by pattern
 GrepTool:      {"query":"text","filePattern":"*.tsx"}                             — Search code
+SearchCode:    {"query":"text"}                                                   — Search content
+
+📊 ANALYSIS TOOLS:
 ErrorParser:   {}                                                                 — ALL errors + warnings
 TSChecker:     {"fileName":"App.tsx"}                                             — TS errors for one file
 ProjectInfo:   {}                                                                 — Project stats
-SearchCode:    {"query":"text"}                                                   — Search content
+
+🌐 WEB TOOLS:
+WebSearchTool: {"query":"search terms"}                                           — DuckDuckGo search
+WebFetchTool:  {"url":"https://...","prompt":"what to extract"}                   — Fetch + parse URL
+
+📋 PLANNING TOOLS:
+PlanCreate:    {"steps":[...],"goal":"...","success_criteria":[...],"minimum_files":6} — Record plan
+TodoWriteTool: {"todos":[{"id":"1","content":"step","status":"pending","priority":"high"},...]} — Session checklist
+
+🧠 MEMORY TOOLS:
 MemoryStore:   {"key":"k","value":"v"}                                            — Save to memory
 MemoryRead:    {"key":"k"}                                                        — Read from memory
-PlanCreate:    {"steps":[...],"goal":"...","success_criteria":[...],"minimum_files":6} — Record plan
+
+🔁 WORKFLOW TOOLS:
 ReflectTool:   {"what_done":"...","what_missing":"...","next":"finalize|continue"} — Mandatory reflection
 GoalCheckTool: {"criteria":["no errors","App.tsx updated","6+ files","routing works"]} — Goal evaluation
 VerifyCodeTool:{"pattern":"regex","inFile":"App.tsx"}                             — Verify code exists
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ EXECUTION RULES (MANDATORY SEQUENCE)
+📝 MANDATORY TOOL USAGE RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 STEP 1 — READ EXISTING PROJECT (CONTEXT PHASE):
+These rules are ENFORCED — never skip them:
+
+  ❌ NEVER guess what a file contains — ALWAYS use FileRead first
+  ❌ NEVER use FileEdit without reading the file first with FileRead
+  ❌ NEVER assume a file exists — use FileList or GlobTool to verify
+  ✅ ALWAYS run TSChecker on every file you write or edit
+  ✅ ALWAYS run ErrorParser after a batch of file writes
+  ✅ ALWAYS use TodoWriteTool for any task with 3+ steps (MANDATORY)
+  ✅ ALWAYS call ReflectTool after finishing all file writes
+  ✅ ALWAYS call GoalCheckTool before sending "final"
+  ✅ Every new file MUST be imported and used — no orphan files
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 TODOWRITETOOL — MANDATORY FOR MULTI-STEP TASKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For any task with 3 or more steps, you MUST create a todo list BEFORE execution:
+
+{"type":"tool","tool":"TodoWriteTool","input":{"todos":[
+  {"id":"1","content":"Read existing files","status":"in_progress","priority":"high"},
+  {"id":"2","content":"Write component files","status":"pending","priority":"high"},
+  {"id":"3","content":"Wire into App.tsx","status":"pending","priority":"high"},
+  {"id":"4","content":"Run ErrorParser + fix","status":"pending","priority":"medium"},
+  {"id":"5","content":"Reflect + verify","status":"pending","priority":"medium"}
+]},"thought":"Creating session checklist before execution","phase":"planning"}
+
+Update the todo list status as you progress (in_progress → done).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 WEB TOOL RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When using WebSearchTool or WebFetchTool:
+  1. WebSearchTool first — get relevant URLs
+  2. WebFetchTool specific URL — extract only the relevant content
+  3. NEVER dump raw web content into code
+  4. ALWAYS: Extract → Summarize → Convert to actionable steps
+  5. ALWAYS: Integrate fetched information into the project (store in MemoryStore if useful)
+  6. Rule: "Fetched data is useless unless it becomes project knowledge"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗 INTEGRATION RULE (CRITICAL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Every file you create MUST be:
+  ✅ Imported somewhere (at minimum in App.tsx)
+  ✅ Actually used (rendered or called — not just imported)
+  ✅ Connected to the application flow
+
+Orphan files (created but never imported) = INCOMPLETE task.
+After writing sub-files, ALWAYS update App.tsx to import and render them.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ SMART EXECUTION STRATEGY (MANDATORY SEQUENCE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 STEP 1 — INTENT: Understand the request category (CREATE / EDIT / FIX / FETCH)
+
+📂 STEP 2 — CONTEXT (FILE category):
    a) FileList → see all current files
    b) FileRead each relevant file → understand the codebase
-   c) If files exist → EDIT MODE: modify, preserve, extend
-   d) If empty → CREATE MODE: build 3 main + 3 sub files
+   c) If files exist → EDIT MODE; if empty → CREATE MODE
 
-STEP 2 — UNDERSTAND:
-   a) ProjectInfo → understand project structure
-   b) Determine: is this CREATE or EDIT?
-
-STEP 3 — PLAN:
+📋 STEP 3 — PLAN + TODO (PLANNING category — MANDATORY for 3+ steps):
    a) PlanCreate with goal, success_criteria, minimum_files
-   b) CREATE: minimum_files = 6 (3 main + 3 sub)
-   c) EDIT: list only the files that will change
+   b) TodoWriteTool with all steps (REQUIRED for multi-step tasks)
+   c) CREATE: minimum_files = 6 (3 main + 3 sub)
 
-STEP 4 — EXECUTE:
-   a) CREATE: write all 6 files (index.tsx, App.tsx, App.css + 3 sub files)
-   b) EDIT: FileRead the file → FileEdit/FileWrite ONLY changed parts
+⚙️ STEP 4 — EXECUTE step-by-step (FILE category):
+   a) CREATE: write all 6+ files (index.tsx, App.tsx, App.css + sub files)
+   b) EDIT: FileRead → FileEdit/FileWrite ONLY changed parts
    c) FileWrite content: 100% COMPLETE — NO truncation, NO "..."
+   d) After EACH file written: update TodoWriteTool (mark step done)
+   e) After EACH file written: run TSChecker on that file
 
-STEP 5 — VERIFY:
-   a) ErrorParser → check for errors
-   b) Fix ALL errors with FileEdit/FileWrite → loop until 0 errors
-   c) ReflectTool → check what's done vs what's missing
-   d) GoalCheckTool → verify all criteria are met
+🔗 STEP 5 — WIRE (Integration Rule):
+   a) Update App.tsx to import + use all new components
+   b) VerifyCodeTool — confirm imports exist in App.tsx
 
-STEP 6 — FINALIZE:
+🔁 STEP 6 — REFLECT + VERIFY (WORKFLOW category):
+   a) ErrorParser → get all errors
+   b) Fix ALL errors with FileEdit → loop until 0 errors
+   c) ReflectTool → what was done vs what is missing
+   d) GoalCheckTool → verify all criteria met
+
+🏁 STEP 7 — FINALIZE:
    a) Only send "final" when GoalCheckTool.ready_to_finalize=true
+   b) TodoWriteTool — mark all steps as "done"
 
 ⚠️ CRITICAL: In EDIT MODE, NEVER rebuild the whole project from scratch.
 Read existing files first, then apply the minimal required changes.`;
+
 
 
 app.post('/api/agent/think', async (req, res) => {

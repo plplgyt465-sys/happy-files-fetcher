@@ -28,11 +28,27 @@ A React/TypeScript live coding IDE with an AI coding assistant powered by an aut
 - Falls back to `'official'` if GEMINI_API_KEY is set
 
 ### ReAct Agent Loop (`src/hooks/useAgentLoop.ts`)
-- **States**: `idle → intent → context → planning → executing → verifying → done`
-- **Tools**: FileList, FileRead, FileWrite, FileCreate, SearchCode, ErrorParser, etc.
+- **States**: `idle → intent → context → planning → selecting → executing → building → detecting → fixing → reflecting → verifying → memory → finalizing → done`
 - **Max iterations**: 50 (safeguard)
 - **Runs client-side**: Tool executor reads/writes React state directly
 - **Live feedback**: `onStateChange` and `onStep` callbacks for real-time UI updates
+- **Async web tools**: WebFetchTool + WebSearchTool dispatch to server `/api/web-fetch` and `/api/web-search`; TodoWriteTool persists to localStorage
+
+### Tool System (`src/hooks/useToolSystem.ts`)
+- **47 tools** across 8 categories: file, search, analysis, code, task, agent, team, web, utility
+- **New in latest version**: WebFetchTool (URL fetcher), WebSearchTool (DuckDuckGo), TodoWriteTool (session checklist)
+
+### Skill System (`src/hooks/useSkillSystem.ts`)
+- **16 skills** across categories: project, generation, analysis, debug, refactor, testing, documentation, workflow
+- **Claude Code-inspired**: `simplify` (3-agent parallel review), `fix-errors` (debug workflow with TodoWriteTool), `memory-manage` (recall + classify)
+
+### AGENT_SYSTEM_PROMPT (in `server/index.ts`)
+The brain of the agent loop. Key architecture:
+- **Tool Categorization Layer**: 7 categories (FILE, SEARCH, ANALYSIS, WEB, PLANNING, MEMORY, WORKFLOW) — agent routes by category first
+- **Mandatory Rules**: NEVER use FileEdit without FileRead first; ALWAYS TSChecker after file write; ALWAYS TodoWriteTool for 3+ step tasks
+- **Integration Rule**: Every created file MUST be imported + used in App.tsx — no orphan files
+- **Web Tool Rules**: WebSearch → WebFetch → Extract → Summarize → Integrate (never dump raw content)
+- **Smart Execution**: Intent → Context → Plan+Todo → Execute → Wire → Reflect → Verify → Finalize
 
 ### Multi-Agent Mode (`/api/multi-agent`)
 - Agent 0 (Orchestrator) plans and delegates to Agents 1–9
