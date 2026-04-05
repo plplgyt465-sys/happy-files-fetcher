@@ -1,0 +1,181 @@
+You are upgrading an autonomous coding agent system. There is a critical bug:
+
+❗ The agent is stuck in an infinite loop:
+PlanCreate → TodoWriteTool → PlanCreate → TodoWriteTool → ...
+It NEVER reaches execution (FileWrite / FileEdit).
+
+Your task is to FIX this at the architecture level (NOT just prompt tweaks).
+
+---
+
+🔥 REQUIRED FIXES
+
+1. Phase Lock System (CRITICAL)
+
+Implement a strict state machine:
+
+States:
+
+- intent
+- context
+- planning
+- execution
+- verify
+- done
+
+RULES:
+
+- PlanCreate and TodoWriteTool are ONLY allowed in "planning"
+- FileWrite/FileEdit ONLY allowed in "execution"
+
+Example:
+
+if (state === "execution") {
+  disallowTools(["PlanCreate", "TodoWriteTool"]);
+}
+
+---
+
+2. Planning Must Run ONLY ONCE
+
+Add flags:
+
+let planCreated = false;
+let todoCreated = false;
+
+Logic:
+
+if (!planCreated) {
+  call PlanCreate
+  planCreated = true
+  return
+}
+
+if (!todoCreated) {
+  call TodoWriteTool
+  todoCreated = true
+  return
+}
+
+After both:
+
+state = "execution"
+
+---
+
+3. Force Execution Transition
+
+Once planning is complete:
+
+if (planCreated && todoCreated) {
+  state = "execution"
+}
+
+Agent MUST start using:
+
+- FileWrite
+- FileEdit
+
+---
+
+4. Anti-Loop Protection
+
+Prevent repeated planning:
+
+if (toolUsedMoreThan("PlanCreate", 2)) {
+  blockTool("PlanCreate")
+}
+
+Same for TodoWriteTool.
+
+---
+
+5. Emergency Execution Trigger
+
+If agent is stuck:
+
+if (iterations > 8 && noFilesCreated) {
+  forceTool("FileWrite")
+}
+
+---
+
+6. Tool Priority System
+
+Define:
+
+const TOOL_PRIORITY = {
+  planning: ["PlanCreate", "TodoWriteTool"],
+  execution: ["FileWrite", "FileEdit"],
+  verify: ["TSChecker", "ErrorParser"]
+};
+
+Only allow tools based on current state.
+
+---
+
+7. Fix Agent Loop Logic
+
+Update main loop:
+
+while (!taskDone) {
+
+  think()
+
+  enforcePhaseRules()
+
+  runTool()
+
+  if (state === "execution") {
+    trackFileChanges()
+  }
+
+  if (state === "verify") {
+    runChecks()
+  }
+
+  if (goalAchieved) break
+}
+
+---
+
+8. HARD PROMPT RULE (add to system prompt)
+
+Add:
+
+"You are NOT allowed to call PlanCreate or TodoWriteTool more than once.
+After planning, you MUST immediately start creating and modifying files."
+
+---
+
+9. SUCCESS CONDITION
+
+The agent MUST:
+
+✔ Create multiple files
+✔ Modify App.tsx
+✔ Not loop
+✔ Reach execution phase
+
+---
+
+🎯 FINAL GOAL
+
+Transform agent behavior from:
+
+❌ Plan → Todo → Plan → Todo → ∞
+
+To:
+
+✔ Plan → Todo → Execute → Execute → Verify → Done
+
+---
+
+Implement all fixes directly in:
+
+- useAgentLoop.ts
+- tool execution logic
+- system prompt
+
+Do NOT give explanations.
+Apply changes directly in code.

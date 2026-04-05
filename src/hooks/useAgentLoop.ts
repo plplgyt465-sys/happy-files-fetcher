@@ -487,6 +487,16 @@ export function useAgentLoop() {
     onStateChange('intent', 'يحلل الطلب...');
     let iterations = 0;
 
+    // ── Phase Lock + Anti-Loop State ─────────────────────────────────────────
+    let planCreated = false;
+    let todoCreated = false;
+    let planCallCount = 0;
+    let todoCallCount = 0;
+    let filesWrittenCount = 0;
+    let currentPhase: 'planning' | 'execution' | 'verify' = 'planning';
+
+    const BLOCKED_IN_EXECUTION = new Set(['plancreate', 'plancreatetool', 'todowritetool', 'todowrite']);
+
     while (iterations < MAX_ITERATIONS) {
       if (abortRef.current) break;
       iterations++;
@@ -581,6 +591,56 @@ export function useAgentLoop() {
         let toolResult: unknown;
         const tl0 = toolName.toLowerCase();
 
+        // ── PHASE LOCK ENFORCEMENT ───────────────────────────────────────────
+        const isPlanTool = tl0 === 'plancreate' || tl0 === 'plancreatetool';
+        const isTodoTool = tl0 === 'todowritetool' || tl0 === 'todowrite';
+
+        // Count calls (anti-loop tracking)
+        if (isPlanTool) planCallCount++;
+        if (isTodoTool) todoCallCount++;
+
+        // Mark planning steps as done on first call
+        if (isPlanTool && !planCreated) planCreated = true;
+        if (isTodoTool && !todoCreated) todoCreated = true;
+
+        // Auto-transition: planning complete → execution
+        if (planCreated && todoCreated && currentPhase === 'planning') {
+          currentPhase = 'execution';
+        }
+
+        // ANTI-LOOP: Block PlanCreate after 2 calls
+        if (isPlanTool && planCallCount > 2) {
+          messages.push({ role: 'assistant', content: JSON.stringify({ type: 'tool', tool: toolName, input: toolInput }) });
+          messages.push({ role: 'user', content: JSON.stringify({ type: 'system', message: `🚫 ANTI-LOOP TRIGGERED: PlanCreate called ${planCallCount} times — it is now PERMANENTLY BLOCKED. You have ${workingFiles.length} files. You MUST call FileWrite NOW to write project files. No more planning tools.` }) });
+          onStateChange('executing', '⛔ حلقة التخطيط قُطعت — تنفيذ إجباري');
+          continue;
+        }
+
+        // ANTI-LOOP: Block TodoWriteTool after 2 calls
+        if (isTodoTool && todoCallCount > 2) {
+          messages.push({ role: 'assistant', content: JSON.stringify({ type: 'tool', tool: toolName, input: toolInput }) });
+          messages.push({ role: 'user', content: JSON.stringify({ type: 'system', message: `🚫 ANTI-LOOP TRIGGERED: TodoWriteTool called ${todoCallCount} times — it is now PERMANENTLY BLOCKED. You MUST call FileWrite NOW to write project files. No more planning tools.` }) });
+          onStateChange('executing', '⛔ حلقة التخطيط قُطعت — تنفيذ إجباري');
+          continue;
+        }
+
+        // PHASE LOCK: Block planning tools in execution phase
+        if (currentPhase === 'execution' && BLOCKED_IN_EXECUTION.has(tl0)) {
+          messages.push({ role: 'assistant', content: JSON.stringify({ type: 'tool', tool: toolName, input: toolInput }) });
+          messages.push({ role: 'user', content: JSON.stringify({ type: 'system', message: `🚫 PHASE LOCK: ${toolName} is BLOCKED — you are in EXECUTION phase. Planning is complete. Call FileWrite or FileEdit NOW.` }) });
+          onStateChange('executing', `⛔ ${toolName} محظورة في التنفيذ`);
+          continue;
+        }
+
+        // EMERGENCY TRIGGER: >8 iterations, 0 files written → force execution
+        if (iterations > 8 && filesWrittenCount === 0) {
+          currentPhase = 'execution';
+          messages.push({ role: 'user', content: JSON.stringify({ type: 'system', message: `🚨 EMERGENCY EXECUTION TRIGGER: ${iterations} iterations with 0 files written. ALL planning tools are permanently blocked. You MUST call FileWrite immediately to create index.tsx, App.tsx, and App.css. Do it NOW.` }) });
+          onStateChange('executing', `🚨 تشغيل طارئ — ${iterations} دورة بدون ملفات`);
+          if (BLOCKED_IN_EXECUTION.has(tl0)) continue;
+        }
+        // ── END PHASE LOCK ───────────────────────────────────────────────────
+
         if (tl0 === 'webfetchtool' || tl0 === 'webfetch') {
           // ── WebFetchTool — calls server /api/web-fetch ─────────────────
           try {
@@ -618,6 +678,17 @@ export function useAgentLoop() {
           toolResult = executeTool(toolName, toolInput, workingFiles, diagnostics, memory);
         }
         const durationMs = Date.now() - t0;
+
+        // ── Track files written (for phase progression) ──────────────────────
+        if (tl0 === 'filewrite' || tl0 === 'filecreate') {
+          filesWrittenCount++;
+          if (currentPhase === 'planning') currentPhase = 'execution';
+        }
+        if (tl0 === 'fileedit') {
+          filesWrittenCount++;
+          if (currentPhase === 'planning') currentPhase = 'execution';
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         const step: AgentStep = {
           tool: toolName,
