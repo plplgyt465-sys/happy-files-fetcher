@@ -6,6 +6,98 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const BARD_URL =
+  "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
+
+const BARD_HEADERS: Record<string, string> = {
+  accept: "*/*",
+  "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+  "x-same-domain": "1",
+  cookie: "",
+};
+
+// ---------- payload / parse helpers ----------
+
+function buildPayload(prompt: string): string {
+  const inner = [
+    [prompt, 0, null, null, null, null, 0],
+    ["en-US"],
+    ["", "", "", null, null, null, null, null, null, ""],
+    "",
+    "",
+    null,
+    [0],
+    1,
+    null,
+    null,
+    1,
+    0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    [[0]],
+    0,
+  ];
+
+  const outer = [null, JSON.stringify(inner)];
+
+  return (
+    new URLSearchParams({ "f.req": JSON.stringify(outer) }).toString() + "&"
+  );
+}
+
+function parseResponse(text: string): string {
+  text = text.replace(")]}'", "");
+  let best = "";
+
+  for (const line of text.split("\n")) {
+    if (!line.includes("wrb.fr")) continue;
+
+    let data: unknown;
+    try {
+      data = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    let entries: unknown[][] = [];
+    if (Array.isArray(data)) {
+      if ((data as unknown[])[0] === "wrb.fr") {
+        entries = [data as unknown[]];
+      } else {
+        entries = (data as unknown[][]).filter(
+          (i) => Array.isArray(i) && i[0] === "wrb.fr"
+        );
+      }
+    }
+
+    for (const entry of entries) {
+      try {
+        const inner = JSON.parse(entry[2] as string);
+        if (
+          Array.isArray(inner) &&
+          Array.isArray((inner as unknown[])[4])
+        ) {
+          for (const c of (inner as unknown[])[4] as unknown[][]) {
+            if (Array.isArray(c) && Array.isArray(c[1])) {
+              const txt = (c[1] as unknown[])
+                .filter((t) => typeof t === "string")
+                .join("");
+              if (txt.length > best.length) best = txt;
+            }
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return best.trim();
+}
+
 // ---------- tool / skill descriptions ----------
 
 const TOOL_DESCRIPTIONS = `
@@ -111,8 +203,8 @@ You are an autonomous coding agent. You can:
 
 ## MODES
 - CREATE: Build new features/projects from scratch
-- EDIT: Modify existing files with minimal changes  
-- FIX: Fix specific errors — modify ONLY the broken file(s)
+- EDIT: Modify existing files with minimal changes
+- FIX: Fix specific errors
 
 ## CRITICAL RULES
 1. ALL projects MUST use React with TypeScript (.tsx files).
@@ -131,7 +223,6 @@ ${TOOL_DESCRIPTIONS}
 
 ## TOOL USAGE
 Call tools with [TOOL_CALL:ToolName] blocks. Use multiple tool calls per response.
-Tool results are automatically executed and returned.
 
 ## SKILL USAGE
 Skills are pre-built workflows. Use [SKILL:skill-id] blocks.
@@ -141,7 +232,6 @@ Skills are pre-built workflows. Use [SKILL:skill-id] blocks.
 - Use tools proactively to understand the codebase before making changes
 - After making changes, use ErrorParserTool to verify no errors
 - Use MemoryStoreTool to remember important context
-- When fixing errors, ALWAYS read the file first before editing
 
 ## SAFETY RULES
 - Do NOT duplicate component declarations
@@ -178,14 +268,6 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "LOVABLE_API_KEY is not configured. Please enable Lovable Cloud." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Build file context
     let filesContext = "";
     if (Array.isArray(files)) {
@@ -194,75 +276,51 @@ serve(async (req) => {
       }
     }
 
-    // Build conversation messages
-    const messages: { role: string; content: string }[] = [
-      { role: "system", content: SYSTEM_PROMPT },
-    ];
-
-    // Add conversation history
-    if (Array.isArray(history)) {
-      const recentHistory = history.slice(-20);
-      for (const msg of recentHistory) {
-        messages.push({
-          role: msg.role === "ai" ? "assistant" : "user",
-          content: msg.content,
-        });
+    // Build conversation context from history
+    let conversationContext = "";
+    if (Array.isArray(history) && history.length > 0) {
+      const recent = history.slice(-10);
+      conversationContext = "\n## Recent Conversation:\n";
+      for (const msg of recent) {
+        const role = msg.role === "ai" ? "Assistant" : "User";
+        conversationContext += `${role}: ${msg.content}\n\n`;
       }
     }
 
-    // Build current user message with file context
+    // Build the full prompt for the unofficial API
     const modePrefix = mode ? `[MODE: ${mode}]\n` : "";
-    let userMessage = "";
+    let fullPrompt = SYSTEM_PROMPT + "\n";
+
+    if (conversationContext) {
+      fullPrompt += conversationContext + "\n";
+    }
 
     if (filesContext) {
-      userMessage += `${modePrefix}--- CURRENT PROJECT FILES ---\n${filesContext}\n--- END FILES ---\n\nUser request: ${prompt}`;
-    } else {
-      userMessage += `${modePrefix}${prompt}`;
+      fullPrompt += `--- CURRENT PROJECT FILES ---\n${filesContext}\n--- END FILES ---\n\n`;
     }
 
-    messages.push({ role: "user", content: userMessage });
+    fullPrompt += `${modePrefix}User request: ${prompt}`;
 
-    // Call Lovable AI Gateway (proxied through Supabase edge function)
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Call unofficial Gemini endpoint (no cookie needed)
+    const payload = buildPayload(fullPrompt);
+
+    const res = await fetch(BARD_URL, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages,
-        reasoning: {
-          effort: "medium",
-        },
-      }),
+      headers: BARD_HEADERS,
+      body: payload,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Credits exhausted. Please add funds at Settings > Workspace > Usage." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Unofficial Gemini error:", res.status, errText);
       return new Response(
-        JSON.stringify({ error: `AI returned status ${response.status}` }),
+        JSON.stringify({ error: `Unofficial Gemini returned status ${res.status}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const data = await response.json();
-    const reply = data?.choices?.[0]?.message?.content || "Could not get a response.";
+    const rawText = await res.text();
+    const reply = parseResponse(rawText) || "[No response from Gemini]";
 
     // Extract diagnostics if present
     let diagnostics = null;
