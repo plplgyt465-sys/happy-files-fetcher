@@ -261,38 +261,6 @@ function parseBardResponse(text: string): string {
 }
 
 async function callAI(systemPrompt: string, userMessage: string, history?: { role: string; content: string }[]): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.LOVABLE_API_KEY;
-
-  if (apiKey) {
-    const messages: { role: string; content: string }[] = [
-      { role: 'system', content: systemPrompt },
-    ];
-    if (history) {
-      for (const msg of history) {
-        messages.push({ role: msg.role === 'ai' ? 'assistant' : msg.role, content: msg.content });
-      }
-    }
-    messages.push({ role: 'user', content: userMessage });
-
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gemini-2.5-flash', messages }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API error:', response.status, errorText);
-      if (response.status === 429) throw new Error('RATE_LIMIT');
-      if (response.status === 402) throw new Error('CREDITS_EXHAUSTED');
-      throw new Error(`AI returned status ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || 'Could not get a response.';
-  }
-
-  // Fall back to unofficial Gemini when no API key is configured
   let conversationText = '';
   if (history) {
     for (const msg of history) {
