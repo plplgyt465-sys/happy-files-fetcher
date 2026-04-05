@@ -195,10 +195,7 @@ const IFRAME_RUNTIME = `
         mod.exports.default = mod.exports;
       }
     } catch(e) {
-      var message = e && e.message ? e.message : String(e);
-      if (message && message === lastErrorMessage) return mod.exports;
-      lastErrorMessage = message;
-      reportError(r, message);
+      return mod.exports;
     }
     return mod.exports;
   }
@@ -206,10 +203,7 @@ const IFRAME_RUNTIME = `
   try {
     req(entryName);
     if (!hasError) window.parent.postMessage({ type: "preview-success" }, "*");
-  } catch(e) {
-    var message = e && e.message ? e.message : String(e);
-    if (message) reportError("", message);
-  }
+  } catch(e) {}
 })();
 `;
 
