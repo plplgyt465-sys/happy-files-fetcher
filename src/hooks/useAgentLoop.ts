@@ -40,7 +40,7 @@ interface AgentDecision {
   files?: { name: string; content: string }[];
 }
 
-const MAX_ITERATIONS = 12;
+const MAX_ITERATIONS = 20;
 
 // ── Language helper ───────────────────────────────────────────────────────
 
@@ -81,13 +81,21 @@ function executeTool(
     return { fileName, content: file.content, lines: file.content.split('\n').length };
   }
 
-  if (t === 'filewrite' || t === 'filecreate') {
+  if (t === 'filewrite' || t === 'filecreate' || t === 'fileedit') {
     const fileName = String(input.fileName || input.name || input.file || '');
     const content = String(input.content || '');
     if (!fileName) return { error: 'fileName is required' };
     if (!content) return { error: 'content is required' };
     const exists = workingFiles.some(f => f.name === fileName);
     return { success: true, fileName, action: exists ? 'updated' : 'created', lines: content.split('\n').length };
+  }
+
+  if (t === 'filedelete') {
+    const fileName = String(input.fileName || input.name || input.file || '');
+    if (!fileName) return { error: 'fileName is required' };
+    const exists = workingFiles.some(f => f.name === fileName);
+    if (!exists) return { error: `File '${fileName}' not found` };
+    return { success: true, fileName, action: 'deleted' };
   }
 
   if (t === 'errorparser') {
@@ -262,11 +270,16 @@ export function useAgentLoop() {
         steps.push(step);
         onStep(step);
 
-        // If it's a FileWrite, update working files immediately
-        if (decision.tool.toLowerCase() === 'filewrite' || decision.tool.toLowerCase() === 'filecreate') {
+        // If it's a FileWrite/FileCreate/FileEdit, update working files AND add to fileOps immediately
+        if (
+          decision.tool.toLowerCase() === 'filewrite' ||
+          decision.tool.toLowerCase() === 'filecreate' ||
+          decision.tool.toLowerCase() === 'fileedit'
+        ) {
           const fileName = String(toolInput.fileName || toolInput.name || toolInput.file || '');
           const content = String(toolInput.content || '');
           if (fileName && content) {
+            // Update working files so the agent sees the changes in subsequent steps
             const idx = workingFiles.findIndex(w => w.name === fileName);
             if (idx >= 0) {
               workingFiles[idx] = { ...workingFiles[idx], content };
@@ -278,6 +291,22 @@ export function useAgentLoop() {
                 content,
               });
             }
+            // Also accumulate into fileOps so applyFileOperations() applies them to the editor
+            const existingOpIdx = fileOps.findIndex(op => op.filename === fileName);
+            if (existingOpIdx >= 0) {
+              fileOps[existingOpIdx] = { filename: fileName, content, type: 'update' };
+            } else {
+              fileOps.push({ filename: fileName, content, type: 'create' });
+            }
+          }
+        }
+
+        // If it's FileDelete, mark it in fileOps
+        if (decision.tool.toLowerCase() === 'filedelete') {
+          const fileName = String(toolInput.fileName || toolInput.name || toolInput.file || '');
+          if (fileName) {
+            workingFiles = workingFiles.filter(w => w.name !== fileName);
+            fileOps.push({ filename: fileName, content: '', type: 'delete' });
           }
         }
 

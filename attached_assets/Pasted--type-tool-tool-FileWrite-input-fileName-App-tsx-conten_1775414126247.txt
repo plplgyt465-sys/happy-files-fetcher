@@ -1,0 +1,27 @@
+
+انشاء الة حاسبة
+
+{"type":"tool","tool":"FileWrite","input":{"fileName":"App.tsx","content":"import React, { useState } from 'react';\\n\\nconst App: React.FC = () =\> {\\n  const [display, setDisplay] = useState('0');\\n  const [equation, setEquation] = useState('');\\n\\n  const handleNumber = (num: string) =\> {\\n    setDisplay(prev =\> (prev === '0' ? num : prev + num));\\n  };\\n\\n  const handleOperator = (op: string) =\> {\\n    setEquation(display + ' ' + op + ' ');\\n    setDisplay('0');\\n  };\\n\\n  const calculate = () =\> {\\n    try {\\n      const result = eval(equation + display);\\n      setDisplay(String(result));\\n      setEquation('');\\n    } catch (error) {\\n      setDisplay('Error');\\n    }\\n  };\\n\\n  const clear = () =\> {\\n    setDisplay('0');\\n    setEquation('');\\n  };\\n\\n  const containerStyle: React.CSSProperties = {\\n    display: 'flex',\\n    flexDirection: 'column',\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    height: '100vh',\\n    fontFamily: 'Arial, sans-serif',\\n    backgroundColor: '\#f0f2f5'\\n  };\\n\\n  const calcStyle: React.CSSProperties = {\\n    backgroundColor: '\#fff',\\n    padding: '20px',\\n    borderRadius: '10px',\\n    boxShadow: '0 4px 10px rgba(0,0,0,0.1)'\\n  };\\n\\n  const screenStyle: React.CSSProperties = {\\n    width: '100%',\\n    height: '50px',\\n    backgroundColor: '\#222',\\n    color: '\#fff',\\n    textAlign: 'right',\\n    padding: '10px',\\n    fontSize: '24px',\\n    boxSizing: 'border-box',\\n    marginBottom: '10px',\\n    borderRadius: '5px'\\n  };\\n\\n  const gridStyle: React.CSSProperties = {\\n    display: 'grid',\\n    gridTemplateColumns: 'repeat(4, 1fr)',\\n    gap: '10px'\\n  };\\n\\n  const buttonStyle = (isOp = false): React.CSSProperties =\> ({\\n    padding: '20px',\\n    fontSize: '18px',\\n    cursor: 'pointer',\\n    border: 'none',\\n    borderRadius: '5px',\\n    backgroundColor: isOp ? '\#ff9500' : '\#e0e0e0',\\n    color: isOp ? 'white' : 'black'\\n  });\\n\\n  return (\\n    \<div style={containerStyle}\>\\n      \<div style={calcStyle}\>\\n        \<div style={{ fontSize: '12px', color: '\#888', textAlign: 'right' }}\>{equation}\</div\>\\n        \<div style={screenStyle}\>{display}\</div\>\\n        \<div style={gridStyle}\>\\n          \<button style={buttonStyle()} onClick={clear}\>C\</button\>\\n          \<button style={buttonStyle()} onClick={() =\> handleOperator('/')}\>/\</button\>\\n          \<button style={buttonStyle()} onClick={() =\> handleOperator('*')}\>*\</button\>\\n          \<button style={buttonStyle(true)} onClick={() =\> handleOperator('-')}\>-\</button\>\\n          \\n          {[7, 8, 9].map(n =\> (\\n            \<button key={n} style={buttonStyle()} onClick={() =\> handleNumber(String(n))}\>{n}\</button\>\\n          ))}\\n          \<button style={buttonStyle(true)} onClick={() =\> handleOperator('+')}\>+\</button\>\\n          \\n          {[4, 5, 6].map(n =\> (\\n            \<button key={n} style={buttonStyle()} onClick={() =\> handleNumber(String(n))}\>{n}\</button\>\\n          ))}\\n          \<button style={buttonStyle(true)} onClick={calculate}\>=\</button\>\\n          \\n          {[1, 2, 3].map(n =\> (\\n            \<button key={n} style={buttonStyle()} onClick={() =\> handleNumber(String(n))}\>{n}\</button\>\\n          ))}\\n          \<button style={{ ...buttonStyle(), gridColumn: 'span 2' }} onClick={() =\> handleNumber('0')}\>0\</button\>\\n          \<button style={buttonStyle()} onClick={() =\> handleNumber('.')}\>.\</button\>\\n        \</div\>\\n      \</div\>\\n    \</div\>\\n  );\\n};\\n\\nexport default App;"},"thought":"بما أن المشروع فارغ، سأقوم بإنشاء ملف App.tsx يحتوي على كود الالة الحاسبة باستخدام React و TypeScript مع تنسيق CSS بسيط داخلي. سأقوم بتنفيذ العمليات الأساسية (جمع، طرح، ضرب، قسمة).","state":"editing"}
+
+Tool Calls
+FileList
+0ms
+Ask 10 agents to build something...
+
+
+
+
+VibeCode
+Platform
+44 Tools
+16 Skills
+Explorer
+
+
+project
+3
+
+App.tsx
+
+App.css
+

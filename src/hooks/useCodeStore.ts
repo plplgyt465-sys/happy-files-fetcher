@@ -16,7 +16,7 @@ export interface CodeFile {
 export interface FileOperation {
   filename: string;
   content: string;
-  type: 'create' | 'update';
+  type: 'create' | 'update' | 'delete';
 }
 
 export interface AgentLog {
@@ -264,8 +264,12 @@ export function useCodeStore() {
 
   const applyFileOperations = useCallback((fileOps: FileOperation[]) => {
     setFiles((prev) => {
-      const updated = [...prev];
+      let updated = [...prev];
       for (const op of fileOps) {
+        if (op.type === 'delete') {
+          updated = updated.filter((f) => f.name !== op.filename);
+          continue;
+        }
         const existingIndex = updated.findIndex((f) => f.name === op.filename);
         if (existingIndex >= 0) {
           updated[existingIndex] = { ...updated[existingIndex], content: op.content };
@@ -284,10 +288,11 @@ export function useCodeStore() {
       return updated;
     });
 
-    if (fileOps.length > 0) {
+    const firstWrite = fileOps.find((op) => op.type !== 'delete');
+    if (firstWrite) {
       setTimeout(() => {
         setFiles((current) => {
-          const target = current.find((f) => f.name === fileOps[0].filename);
+          const target = current.find((f) => f.name === firstWrite.filename);
           if (target) setActiveFileId(target.id);
           return current;
         });
