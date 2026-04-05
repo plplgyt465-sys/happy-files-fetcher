@@ -27,7 +27,8 @@ const IFRAME_RUNTIME = `
 
   function extractLineInfo(msg, file) {
     var line = null, column = null, errorType = "RuntimeError";
-    
+    msg = (msg == null ? "" : String(msg));
+
     // Babel SyntaxError: "file.tsx: ... (line:col)"
     var babelMatch = msg.match(/^([^:]+):\\s*(.+?)\\s*\\((\\d+):(\\d+)\\)/);
     if (babelMatch) {
@@ -36,23 +37,22 @@ const IFRAME_RUNTIME = `
       column = parseInt(babelMatch[4], 10);
       errorType = "SyntaxError";
     }
-    
+
     // Generic "at line X" or "line X"
     if (!line) {
       var lineMatch = msg.match(/(?:at\\s+)?line\\s+(\\d+)/i);
       if (lineMatch) line = parseInt(lineMatch[1], 10);
     }
-    
+
     // "SyntaxError:", "TypeError:", "ReferenceError:" etc.
     var typeMatch = msg.match(/^(\\w*Error):/);
     if (typeMatch) errorType = typeMatch[1];
-    
-    // Babel "Unexpected token" => SyntaxError
+
     if (msg.indexOf("Unexpected token") >= 0) errorType = "SyntaxError";
     if (msg.indexOf("is not defined") >= 0) errorType = "ReferenceError";
     if (msg.indexOf("is not a function") >= 0) errorType = "TypeError";
     if (msg.indexOf("Cannot read prop") >= 0) errorType = "TypeError";
-    
+
     return { line: line, column: column, errorType: errorType };
   }
 
@@ -162,17 +162,20 @@ const IFRAME_RUNTIME = `
         imps.push({t:"side",src:s}); return "";
       });
 
+      if (typeof Babel === "undefined") {
+        reportError(r, "Babel compiler not loaded — check network connection");
+        return mod.exports;
+      }
+
       var opts = { presets: [["react", { runtime: "classic" }], "typescript"], filename: r };
       var transformed;
       try { transformed = Babel.transform(code, opts).code; }
       catch(e2) {
-        // If Babel fails, try stripping extra escapes
         try {
           code = code.replace(/\\\\([^\\\\])/g, "$1");
           transformed = Babel.transform(code, opts).code;
         } catch(e3) {
-          // Report with original Babel error which has line info
-          reportError(r, e2.message);
+          reportError(r, e2 && e2.message ? e2.message : String(e2));
           return mod.exports;
         }
       }
@@ -209,14 +212,14 @@ const IFRAME_RUNTIME = `
       if (!mod.exports.default && Object.keys(mod.exports).length === 0) {
         mod.exports.default = mod.exports;
       }
-    } catch(e) { reportError(r, e.message); }
+    } catch(e) { reportError(r, e && e.message ? e.message : String(e)); }
     return mod.exports;
   }
 
   try {
     req(entryName);
     if (!hasError) window.parent.postMessage({ type: "preview-success" }, "*");
-  } catch(e) { reportError("", e.message); }
+  } catch(e) { reportError("", e && e.message ? e.message : String(e)); }
 })();
 `;
 
