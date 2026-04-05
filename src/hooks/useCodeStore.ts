@@ -229,6 +229,20 @@ export function useCodeStore() {
     setDependencies((prev) => prev.filter((d) => d.name !== name));
   }, []);
 
+  const startNewProject = useCallback(() => {
+    setFiles([]);
+    setActiveFileId('');
+    setDependencies([]);
+    setErrorLine(null);
+    setAgentProgress(null);
+    setAgentSteps([]);
+    setAgentCurrentState('idle');
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_ACTIVE_KEY);
+    } catch { /* ignore */ }
+  }, []);
+
   const applyFileOperations = useCallback((fileOps: FileOperation[]) => {
     setFiles((prev) => {
       let updated = [...prev];
@@ -486,5 +500,6 @@ export function useCodeStore() {
     dependencies,
     addDependency,
     removeDependency,
+    startNewProject,
   };
 }

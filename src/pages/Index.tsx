@@ -43,6 +43,7 @@ const Index = () => {
     dependencies,
     addDependency,
     removeDependency,
+    startNewProject,
   } = useCodeStore();
 
   const [chatOpen, setChatOpen] = useState(true);
@@ -132,12 +133,21 @@ const Index = () => {
           >
             <Wrench className="w-4 h-4" />
           </button>
-          <Code2 className="w-5 h-5 text-primary" />
-          <span className="text-sm font-bold text-foreground tracking-tight">VibeCode</span>
-          <span className="text-xs text-muted-foreground">Platform</span>
 
-          {/* Stats badges */}
-          <div className="ml-auto flex items-center gap-1 text-[10px]">
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={startNewProject}
+              className="rounded-md border border-border bg-secondary px-3 py-1 text-xs text-foreground hover:bg-secondary/80 transition-colors"
+              title="Start a new empty project"
+            >
+              مشروع جديد
+            </button>
+            <Code2 className="w-5 h-5 text-primary" />
+            <span className="text-sm font-bold text-foreground tracking-tight">VibeCode</span>
+            <span className="text-xs text-muted-foreground">Platform</span>
+
+            {/* Stats badges */}
+            <div className="flex items-center gap-1 text-[10px]">
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
               {toolSystem.toolCount} Tools
             </span>
@@ -154,6 +164,7 @@ const Index = () => {
                 {diagnostics.filter(d => d.severity === 'warning').length} warnings
               </span>
             )}
+          </div>
           </div>
         </div>
 
