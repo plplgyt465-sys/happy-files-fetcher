@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useVersionControl } from './useVersionControl';
 import type { Dependency } from '@/components/DependencyManager';
 
@@ -351,12 +350,7 @@ export function useCodeStore() {
       const filesPayload = currentFiles.map((f) => ({ name: f.name, content: f.content }));
 
       const useMulti = multiAgentMode && shouldUseMultiAgent(content);
-      let functionName: string;
-      if (aiProvider === 'unofficial') {
-        functionName = 'gemini-unofficial';
-      } else {
-        functionName = useMulti ? 'multi-agent' : 'gemini-chat';
-      }
+      const functionName = useMulti ? 'multi-agent' : 'gemini-chat';
       const rpcMode = useMulti ? 'multi' : 'single';
 
       if (useMulti) {
@@ -369,12 +363,19 @@ export function useCodeStore() {
         content: m.content,
       }));
 
-      const { data, error } = await supabase.functions.invoke(functionName, {
-        body: { prompt: content, files: filesPayload, mode: rpcMode, history: recentHistory },
+      const endpoint = functionName === 'multi-agent' ? '/api/multi-agent' : '/api/gemini-chat';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: content, files: filesPayload, mode: rpcMode, history: recentHistory }),
       });
 
-      if (error) throw new Error('Connection error');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error || 'Connection error');
+      }
 
+      const data = await response.json();
       const rawReply = data?.reply || 'Could not get a response.';
       const agentLogs: AgentLog[] = data?.agentLogs || [];
       const { text, fileOps } = parseFileOperations(rawReply);
