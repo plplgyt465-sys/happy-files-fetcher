@@ -577,8 +577,46 @@ export function useAgentLoop() {
         const toolInput = decision.input || {};
         const toolName = decision.tool;
 
-        // Execute tool client-side
-        const toolResult = executeTool(toolName, toolInput, workingFiles, diagnostics, memory);
+        // Execute tool — async for web tools, sync for everything else
+        let toolResult: unknown;
+        const tl0 = toolName.toLowerCase();
+
+        if (tl0 === 'webfetchtool' || tl0 === 'webfetch') {
+          // ── WebFetchTool — calls server /api/web-fetch ─────────────────
+          try {
+            const fetchRes = await fetch('/api/web-fetch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: toolInput.url, prompt: toolInput.prompt }),
+            });
+            toolResult = fetchRes.ok ? await fetchRes.json() : { error: `HTTP ${fetchRes.status}` };
+          } catch (e) {
+            toolResult = { error: String(e) };
+          }
+        } else if (tl0 === 'websearchtool' || tl0 === 'websearch') {
+          // ── WebSearchTool — calls server /api/web-search ───────────────
+          try {
+            const searchRes = await fetch('/api/web-search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: toolInput.query }),
+            });
+            toolResult = searchRes.ok ? await searchRes.json() : { error: `HTTP ${searchRes.status}` };
+          } catch (e) {
+            toolResult = { error: String(e) };
+          }
+        } else if (tl0 === 'todowritetool' || tl0 === 'todowrite') {
+          // ── TodoWriteTool — persists todos in memory ───────────────────
+          const todos = toolInput.todos;
+          try {
+            localStorage.setItem('vibecode_todos', JSON.stringify(todos));
+            toolResult = { success: true, todos, message: `Updated ${Array.isArray(todos) ? todos.length : 0} todo(s)` };
+          } catch {
+            toolResult = { success: false, error: 'Failed to save todos' };
+          }
+        } else {
+          toolResult = executeTool(toolName, toolInput, workingFiles, diagnostics, memory);
+        }
         const durationMs = Date.now() - t0;
 
         const step: AgentStep = {

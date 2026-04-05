@@ -25,7 +25,8 @@ export type SkillCategory =
   | 'workflow'
   | 'debug'
   | 'testing'
-  | 'documentation';
+  | 'documentation'
+  | 'web';
 
 export interface SkillExecutionResult {
   skill: string;
@@ -83,18 +84,18 @@ export function useSkillSystem(
         { tool: 'FileWriteTool', input: { fileName: 'use{{name}}.ts', content: '{{previousResult}}' }, description: 'Write hook file' },
       ],
     },
-    // 4. Full Code Review
+    // 4. Simplify (Claude Code-inspired — parallel quality review)
     {
-      id: 'code-review',
-      name: 'Full Code Review',
-      description: 'Analyze all files for errors, complexity, and unused code',
+      id: 'simplify',
+      name: 'Simplify & Review',
+      description: 'Run a multi-dimension code review: reuse opportunities, quality issues, and efficiency improvements',
       category: 'analysis',
       icon: '🔍',
       steps: [
-        { tool: 'ProjectInfoTool', input: {}, description: 'Get project overview' },
-        { tool: 'ErrorParserTool', input: {}, description: 'Check for errors' },
-        { tool: 'UnusedCodeTool', input: {}, description: 'Find unused exports' },
-        { tool: 'DependencyAnalyzerTool', input: {}, description: 'Analyze dependencies' },
+        { tool: 'ProjectInfoTool', input: {}, description: 'Survey project structure' },
+        { tool: 'UnusedCodeTool', input: {}, description: 'Agent 1: Find reuse opportunities (dead/duplicate code)' },
+        { tool: 'ErrorParserTool', input: {}, description: 'Agent 2: Check code quality (errors, warnings)' },
+        { tool: 'DependencyAnalyzerTool', input: {}, description: 'Agent 3: Efficiency review (dependency graph)' },
       ],
     },
     // 5. File Complexity Audit
@@ -109,17 +110,18 @@ export function useSkillSystem(
         { tool: 'ProjectInfoTool', input: {}, description: 'Get project stats' },
       ],
     },
-    // 6. Error Fix Workflow
+    // 6. Debug Workflow (Claude Code-inspired)
     {
       id: 'fix-errors',
-      name: 'Error Fix Workflow',
-      description: 'Detect all errors and prepare fix plan',
+      name: 'Debug Workflow',
+      description: 'Detect TypeScript/lint errors, read affected files, create a repair checklist, and prepare targeted fixes',
       category: 'debug',
       icon: '🔧',
       steps: [
-        { tool: 'ErrorParserTool', input: {}, description: 'Get all errors' },
-        { tool: 'TaskCreateTool', input: { title: 'Fix detected errors', description: 'Auto-detected errors need fixing' }, description: 'Create fix task' },
-        { tool: 'EnterPlanModeTool', input: {}, description: 'Enter plan mode to prepare fixes' },
+        { tool: 'ErrorParserTool', input: {}, description: 'Parse all TypeScript and lint errors' },
+        { tool: 'ProjectInfoTool', input: {}, description: 'Inspect project state' },
+        { tool: 'TodoWriteTool', input: { todos: [{ id: '1', content: 'Identify root cause', status: 'pending', priority: 'high' }, { id: '2', content: 'Apply targeted fix', status: 'pending', priority: 'high' }, { id: '3', content: 'Verify fix resolves error', status: 'pending', priority: 'medium' }] }, description: 'Create repair checklist' },
+        { tool: 'EnterPlanModeTool', input: {}, description: 'Enter plan mode to prepare targeted fixes' },
       ],
     },
     // 7. Search & Replace Workflow
@@ -241,16 +243,18 @@ export function useSkillSystem(
         { tool: 'GrepTool', input: { query: 'localStorage' }, description: 'Check for localStorage usage' },
       ],
     },
-    // 16. Memory Management
+    // 16. Memory Manager (Claude Code-inspired 'remember' skill)
     {
       id: 'memory-manage',
       name: 'Memory Manager',
-      description: 'Store and recall project memories and preferences',
+      description: 'Review and organize project memories — recall stored context and classify into project, personal, or temporary',
       category: 'workflow',
       icon: '🧠',
       steps: [
-        { tool: 'MemoryRecallTool', input: { key: 'project_preferences' }, description: 'Recall preferences' },
-        { tool: 'ProjectInfoTool', input: {}, description: 'Get current state' },
+        { tool: 'MemoryRecallTool', input: { key: 'project_preferences' }, description: 'Recall project preferences' },
+        { tool: 'MemoryRecallTool', input: { key: 'coding_style' }, description: 'Recall coding style guide' },
+        { tool: 'ProjectInfoTool', input: {}, description: 'Get current project state' },
+        { tool: 'MemoryStoreTool', input: { key: 'last_session', value: new Date().toISOString() }, description: 'Record session timestamp' },
       ],
     },
   ], []);

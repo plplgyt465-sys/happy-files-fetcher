@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 const TOOL_DESCRIPTIONS = `
-## Available Tools (44 total)
+## Available Tools (47 total)
 
 To use a tool, wrap it in [TOOL_CALL:ToolName] blocks with JSON input:
 [TOOL_CALL:FileReadTool]
@@ -20,9 +20,9 @@ To use a tool, wrap it in [TOOL_CALL:ToolName] blocks with JSON input:
 [/TOOL_CALL]
 
 ### FILE (8)
-- **FileReadTool**: Read content of a file, optionally specifying line range (required: fileName)
-- **FileWriteTool**: Create or overwrite a file with content (required: fileName, content)
-- **FileEditTool**: Edit file by replacing a string with another (required: fileName, oldString, newString)
+- **FileReadTool**: Read a file from the project. Supports optional startLine/endLine for large files (required: fileName)
+- **FileWriteTool**: Create or overwrite a file with full content (required: fileName, content)
+- **FileEditTool**: Perform exact string replacement in a file — always read the file first (required: fileName, oldString, newString)
 - **FileDeleteTool**: Delete a file from the project (required: fileName)
 - **FileRenameTool**: Rename a file (required: oldName, newName)
 - **FileCopyTool**: Copy a file to a new location (required: source, destination)
@@ -30,79 +30,88 @@ To use a tool, wrap it in [TOOL_CALL:ToolName] blocks with JSON input:
 - **FileInfoTool**: Get metadata about a file (required: fileName)
 
 ### SEARCH (6)
-- **GlobTool**: Find files matching a glob pattern (required: pattern)
-- **GrepTool**: Search for text across all files (required: query)
+- **GlobTool**: Fast file pattern matching — supports glob patterns like "**/*.tsx" or "src/**/*.ts" (required: pattern)
+- **GrepTool**: Search for text patterns across all project files (required: query)
 - **SearchReplaceTool**: Search and replace text across files (required: search, replace)
 - **FindSymbolTool**: Find where a symbol is defined (required: symbol)
 - **FindReferencesTool**: Find all references to a symbol (required: symbol)
 - **ToolSearchTool**: Search for available tools by name or category
 
 ### ANALYSIS (5)
-- **ErrorParserTool**: Get all current diagnostics and errors
+- **ErrorParserTool**: Get all current diagnostics and TypeScript errors
 - **TSCheckerTool**: Check a specific file for TypeScript issues (required: fileName)
-- **ProjectInfoTool**: Get full project overview and statistics
-- **DependencyAnalyzerTool**: Analyze import dependency graph
+- **ProjectInfoTool**: Get full project overview, file count, and statistics
+- **DependencyAnalyzerTool**: Analyze import dependency graph across the project
 - **UnusedCodeTool**: Find unused exports across the project
 
-### CODE (4)
+### CODE (5)
 - **LSPTool**: Language server operations: hover, definition, references (required: fileName, operation, line)
 - **CodeComplexityTool**: Calculate cyclomatic complexity of a file (required: fileName)
-- **CodeFormatterTool**: Format code in a file (required: fileName)
-- **SnippetGeneratorTool**: Generate code snippets (required: type, name)
+- **CodeFormatterTool**: Format code in a file — normalizes indentation and trailing whitespace (required: fileName)
+- **SnippetGeneratorTool**: Generate code snippets: component, hook, context, types, test, api (required: type, name)
 - **NotebookEditTool**: Edit a Jupyter notebook cell (required: fileName, cellIndex, content)
 
-### TASK (5)
-- **TaskCreateTool**: Create a new task (required: title)
-- **TaskUpdateTool**: Update a task status or details (required: taskId)
-- **TaskListTool**: List all tasks
+### TASK (7)
+- **TaskCreateTool**: Create a new task with title and optional description (required: title)
+- **TaskUpdateTool**: Update a task status (pending|in_progress|done|failed) or details (required: taskId)
+- **TaskListTool**: List all tasks and their current status
 - **TaskDeleteTool**: Delete a task (required: taskId)
-- **ProgressTrackTool**: Get progress across all tasks
-- **TimeEstimateTool**: Estimate time for a task (required: description)
+- **ProgressTrackTool**: Get progress summary across all tasks
+- **TimeEstimateTool**: Estimate time needed for a described task (required: description)
+- **TodoWriteTool**: Create and manage a structured session todo checklist. Use proactively for multi-step tasks (required: todos — array of {content, status, priority, id})
 
 ### PLAN (2)
-- **EnterPlanModeTool**: Enter plan mode (AI plans without executing)
-- **ExitPlanModeTool**: Exit plan mode (AI can execute changes)
+- **EnterPlanModeTool**: Enter plan mode — AI plans and outlines without executing changes
+- **ExitPlanModeTool**: Exit plan mode — AI resumes executing changes
 
 ### AGENT (4)
 - **AgentTool**: Spawn a sub-agent with a specific instruction (required: instruction)
 - **SendMessageTool**: Send a message to another agent (required: to, message)
-- **CoordinatorTool**: Start multi-agent coordination (required: plan)
+- **CoordinatorTool**: Start multi-agent coordination with a plan (required: plan)
 - **DelegateTool**: Delegate a task to a specific agent (required: agentId, task)
 
 ### TEAM (2)
 - **TeamCreateTool**: Create a team of agents (required: name)
 - **TeamDeleteTool**: Delete a team (required: teamId)
 
+### WEB (2)
+- **WebFetchTool**: Fetch content from a URL and convert to readable text. Use for reading docs, APIs, or any web page (required: url, prompt)
+- **WebSearchTool**: Search the web using DuckDuckGo and return results with snippets (required: query)
+
 ### UTILITY (6)
-- **SleepTool**: Wait for a specified duration
+- **SleepTool**: Wait for a specified duration in milliseconds (required: duration)
 - **SyntheticOutputTool**: Generate structured output in JSON or markdown (required: data)
-- **MemoryStoreTool**: Store persistent memory (required: key, value)
-- **MemoryRecallTool**: Recall stored memory (required: key)
-- **DiffTool**: Compare two files (required: file1, file2)
+- **MemoryStoreTool**: Store persistent memory across sessions (required: key, value)
+- **MemoryRecallTool**: Recall previously stored memory (required: key)
+- **DiffTool**: Compare two files and show differences (required: file1, file2)
 - **BashTool**: Execute shell commands (simulated: ls, cat, wc, echo, pwd, date) (required: command)
 
 ## Available Skills (16 total)
 
 To use a skill, wrap it in [SKILL:skill-id] blocks:
-- **scaffold-react**: Create a complete React project scaffold
-- **generate-component**: Generate a React component [Input: name]
-- **generate-hook**: Generate a custom React hook [Input: name]
-- **code-review**: Full code review with errors, complexity, unused code
-- **complexity-audit**: Measure complexity for all files
-- **fix-errors**: Detect and prepare to fix errors
-- **search-replace**: Global search and replace [Input: search, replace]
-- **rename-symbol**: Rename a symbol across all files [Input: oldName, newName]
-- **generate-test**: Generate a test file [Input: name]
-- **generate-api**: Generate API service functions [Input: name]
-- **generate-context**: Generate React Context provider [Input: name]
-- **generate-types**: Generate TypeScript types [Input: name]
-- **generate-docs**: Generate project documentation
-- **perf-analysis**: Analyze performance patterns
-- **security-scan**: Scan for security issues
-- **memory-manage**: Store and recall project memories
+[SKILL:scaffold-react]
+{}
+[/SKILL]
+
+- **scaffold-react** (🏗️): Create a complete React TypeScript project with App, styles, and entry point
+- **generate-component** (🧩): Generate a new React component with props interface [Input: name]
+- **generate-hook** (🪝): Generate a custom React hook with state and effects [Input: name]
+- **simplify** (🔍): Launch 3 parallel review agents (reuse, quality, efficiency) on changed code
+- **complexity-audit** (📊): Measure cyclomatic complexity for all project files
+- **fix-errors** (🔧): Detect TypeScript/lint errors and prepare targeted fixes
+- **search-replace** (🔄): Global search and replace across all files [Input: search, replace]
+- **rename-symbol** (✏️): Rename a symbol safely across all files [Input: oldName, newName]
+- **generate-test** (🧪): Generate a Vitest test file for a component or function [Input: name]
+- **generate-api** (🌐): Generate typed API service functions with fetch [Input: name]
+- **generate-context** (🔗): Generate a React Context provider with useContext hook [Input: name]
+- **generate-types** (📐): Generate TypeScript interfaces and types [Input: name]
+- **generate-docs** (📝): Generate project documentation and component docs
+- **perf-analysis** (⚡): Analyze performance patterns and suggest optimizations
+- **security-scan** (🔒): Scan for security vulnerabilities and unsafe patterns
+- **memory-manage** (🧠): Review and organize project memories — classify into project/personal/temp
 `;
 
-const GEMINI_CHAT_SYSTEM = `You are an expert AI coding assistant integrated into VibeCode — a professional live coding platform with 44 tools and 16 skills.
+const GEMINI_CHAT_SYSTEM = `You are an expert AI coding assistant integrated into VibeCode — a professional live coding platform with 47 tools and 16 skills.
 
 ## MODES
 You operate in one of three modes based on the user's request:
@@ -748,6 +757,98 @@ app.post('/api/multi-agent', async (req, res) => {
   } catch (err) {
     console.error('multi-agent error:', err);
     return res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── WebFetchTool route ──────────────────────────────────────────────────────
+app.post('/api/web-fetch', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    let targetUrl = url.trim();
+    if (targetUrl.startsWith('http://')) targetUrl = targetUrl.replace('http://', 'https://');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(targetUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeCode/1.0; +https://vibecode.app)' },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+    clearTimeout(timeout);
+
+    const contentType = response.headers.get('content-type') || '';
+    const rawText = await response.text();
+
+    let markdown = rawText;
+    if (contentType.includes('html')) {
+      markdown = rawText
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, l, t) => '\n' + '#'.repeat(Number(l)) + ' ' + t.replace(/<[^>]+>/g, '').trim() + '\n')
+        .replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => `[${text.replace(/<[^>]+>/g, '').trim()}](${href})`)
+        .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, t) => '- ' + t.replace(/<[^>]+>/g, '').trim())
+        .replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_, t) => '\n' + t.replace(/<[^>]+>/g, '').trim() + '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/ {2,}/g, ' ')
+        .trim()
+        .slice(0, 80000);
+    }
+
+    return res.json({ markdown, url: response.url, status: response.status, bytes: rawText.length, contentType });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(502).json({ error: `WebFetch failed: ${msg}` });
+  }
+});
+
+// ── WebSearchTool route ─────────────────────────────────────────────────────
+app.post('/api/web-search', async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) return res.status(400).json({ error: 'query is required' });
+
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(ddgUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeCode/1.0)' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const data = await response.json() as Record<string, unknown>;
+
+    interface DDGTopic { Text?: string; FirstURL?: string; Name?: string; Topics?: DDGTopic[] }
+    const flatTopics: DDGTopic[] = [];
+    for (const t of ((data.RelatedTopics || []) as DDGTopic[])) {
+      if (t.Topics && Array.isArray(t.Topics)) flatTopics.push(...t.Topics);
+      else flatTopics.push(t);
+    }
+
+    const results = flatTopics
+      .filter((t) => t.FirstURL && t.Text)
+      .slice(0, 8)
+      .map((t) => ({ title: (t.Text || '').split(' - ')[0].trim(), url: t.FirstURL || '', snippet: t.Text || '' }));
+
+    return res.json({
+      query,
+      answer: (data.AbstractText as string) || (data.Answer as string) || '',
+      results,
+      abstractSource: (data.AbstractSource as string) || '',
+      abstractURL: (data.AbstractURL as string) || '',
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(502).json({ error: `WebSearch failed: ${msg}` });
   }
 });
 

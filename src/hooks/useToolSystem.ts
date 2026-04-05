@@ -766,6 +766,41 @@ export function useToolSystem(
     }
   }, [files, updateFile]);
 
+  // 45. WebFetchTool
+  const WebFetchTool = useCallback((input: ToolInput): ToolResult => {
+    const url = String(input.url || '');
+    if (!url) return { tool: 'WebFetchTool', success: false, result: 'url is required' };
+    return {
+      tool: 'WebFetchTool',
+      success: true,
+      result: { message: `WebFetch for "${url}" dispatched to server. Use the agent loop for async execution.`, url },
+    };
+  }, []);
+
+  // 46. WebSearchTool
+  const WebSearchTool = useCallback((input: ToolInput): ToolResult => {
+    const query = String(input.query || '');
+    if (!query) return { tool: 'WebSearchTool', success: false, result: 'query is required' };
+    return {
+      tool: 'WebSearchTool',
+      success: true,
+      result: { message: `WebSearch for "${query}" dispatched to server. Use the agent loop for async execution.`, query },
+    };
+  }, []);
+
+  // 47. TodoWriteTool
+  const TodoWriteTool = useCallback((input: ToolInput): ToolResult => {
+    const todos = input.todos;
+    if (!todos) return { tool: 'TodoWriteTool', success: false, result: 'todos array is required' };
+    try {
+      localStorage.setItem('vibecode_todos', JSON.stringify(todos));
+      const count = Array.isArray(todos) ? todos.length : 0;
+      return { tool: 'TodoWriteTool', success: true, result: { message: `Session todo list updated with ${count} item(s)`, todos } };
+    } catch {
+      return { tool: 'TodoWriteTool', success: false, result: 'Failed to save todos' };
+    }
+  }, []);
+
   // ════════════════════════════════════════════════════════════════
   //  TOOL REGISTRY
   // ════════════════════════════════════════════════════════════════
@@ -821,7 +856,12 @@ export function useToolSystem(
     { name: 'DiffTool', category: 'utility', description: 'Compare two files and show differences', inputSchema: { file1: { type: 'string', description: 'First file', required: true }, file2: { type: 'string', description: 'Second file', required: true } }, execute: DiffTool },
     { name: 'BashTool', category: 'utility', description: 'Execute shell commands (simulated: ls, cat, wc, echo, pwd, date)', inputSchema: { command: { type: 'string', description: 'Command to execute', required: true } }, execute: BashTool },
     { name: 'NotebookEditTool', category: 'code', description: 'Edit a Jupyter notebook cell', inputSchema: { fileName: { type: 'string', description: 'Notebook file', required: true }, cellIndex: { type: 'number', description: 'Cell index', required: true }, content: { type: 'string', description: 'New cell content', required: true } }, execute: NotebookEditTool },
-  ], [FileReadTool, FileWriteTool, FileEditTool, FileDeleteTool, FileRenameTool, FileCopyTool, FileMoveTool, FileInfoTool, GlobTool, GrepTool, SearchReplaceTool, FindSymbolTool, FindReferencesTool, ToolSearchTool, ErrorParserTool, TSCheckerTool, ProjectInfoTool, LSPTool, DependencyAnalyzerTool, CodeComplexityTool, UnusedCodeTool, CodeFormatterTool, TaskCreateTool, TaskUpdateTool, TaskListTool, TaskDeleteTool, EnterPlanModeTool, ExitPlanModeTool, ProgressTrackTool, TimeEstimateTool, AgentTool, SendMessageTool, TeamCreateTool, TeamDeleteTool, CoordinatorTool, DelegateTool, SleepTool, SyntheticOutputTool, MemoryStoreTool, MemoryRecallTool, SnippetGeneratorTool, DiffTool, BashTool, NotebookEditTool]);
+    // Web Tools
+    { name: 'WebFetchTool', category: 'web', description: 'Fetch content from a URL and convert to readable text', inputSchema: { url: { type: 'string', description: 'URL to fetch', required: true }, prompt: { type: 'string', description: 'What to extract from the page (optional)' } }, execute: WebFetchTool },
+    { name: 'WebSearchTool', category: 'web', description: 'Search the web using DuckDuckGo and return results with snippets', inputSchema: { query: { type: 'string', description: 'Search query', required: true } }, execute: WebSearchTool },
+    // Todo Tool
+    { name: 'TodoWriteTool', category: 'task', description: 'Create and manage a structured session todo checklist', inputSchema: { todos: { type: 'array', description: 'Array of {id, content, status, priority} objects', required: true } }, execute: TodoWriteTool },
+  ], [FileReadTool, FileWriteTool, FileEditTool, FileDeleteTool, FileRenameTool, FileCopyTool, FileMoveTool, FileInfoTool, GlobTool, GrepTool, SearchReplaceTool, FindSymbolTool, FindReferencesTool, ToolSearchTool, ErrorParserTool, TSCheckerTool, ProjectInfoTool, LSPTool, DependencyAnalyzerTool, CodeComplexityTool, UnusedCodeTool, CodeFormatterTool, TaskCreateTool, TaskUpdateTool, TaskListTool, TaskDeleteTool, EnterPlanModeTool, ExitPlanModeTool, ProgressTrackTool, TimeEstimateTool, AgentTool, SendMessageTool, TeamCreateTool, TeamDeleteTool, CoordinatorTool, DelegateTool, SleepTool, SyntheticOutputTool, MemoryStoreTool, MemoryRecallTool, SnippetGeneratorTool, DiffTool, BashTool, NotebookEditTool, WebFetchTool, WebSearchTool, TodoWriteTool]);
 
   // Execute a tool by name
   const executeTool = useCallback((toolName: string, input: ToolInput = {}): ToolResult => {
