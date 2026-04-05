@@ -245,6 +245,83 @@ async function callAI(systemPrompt: string, userMessage: string, history?: { rol
   return data?.choices?.[0]?.message?.content || 'Could not get a response.';
 }
 
+// ─── Unofficial Gemini helpers ───────────────────────────────────────────────
+
+const BARD_URL =
+  'https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
+
+const BARD_HEADERS: Record<string, string> = {
+  accept: '*/*',
+  'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+  'x-same-domain': '1',
+  cookie: '',
+};
+
+function buildBardPayload(prompt: string): string {
+  const inner = [
+    [prompt, 0, null, null, null, null, 0],
+    ['en-US'],
+    ['', '', '', null, null, null, null, null, null, ''],
+    '',
+    '',
+    null,
+    [0],
+    1,
+    null,
+    null,
+    1,
+    0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    [[0]],
+    0,
+  ];
+  const outer = [null, JSON.stringify(inner)];
+  return new URLSearchParams({ 'f.req': JSON.stringify(outer) }).toString() + '&';
+}
+
+function parseBardResponse(text: string): string {
+  text = text.replace(")]}'", '');
+  let best = '';
+
+  for (const line of text.split('\n')) {
+    if (!line.includes('wrb.fr')) continue;
+    let data: unknown;
+    try { data = JSON.parse(line); } catch { continue; }
+
+    let entries: unknown[][] = [];
+    if (Array.isArray(data)) {
+      if ((data as unknown[])[0] === 'wrb.fr') {
+        entries = [data as unknown[]];
+      } else {
+        entries = (data as unknown[][]).filter(
+          (i) => Array.isArray(i) && i[0] === 'wrb.fr'
+        );
+      }
+    }
+
+    for (const entry of entries) {
+      try {
+        const inner = JSON.parse(entry[2] as string);
+        if (Array.isArray(inner) && Array.isArray((inner as unknown[])[4])) {
+          for (const c of (inner as unknown[])[4] as unknown[][]) {
+            if (Array.isArray(c) && Array.isArray(c[1])) {
+              const txt = (c[1] as unknown[]).filter((t) => typeof t === 'string').join('');
+              if (txt.length > best.length) best = txt;
+            }
+          }
+        }
+      } catch { continue; }
+    }
+  }
+  return best.trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function extractFileNames(response: string): string[] {
   const names: string[] = [];
   const regex = /\[FILE:([\w.\-/]+)\]/g;
@@ -252,6 +329,62 @@ function extractFileNames(response: string): string[] {
   while ((m = regex.exec(response)) !== null) names.push(m[1]);
   return names;
 }
+
+app.post('/api/gemini-unofficial', async (req, res) => {
+  try {
+    const { prompt, files, mode, history } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+    let filesContext = '';
+    if (Array.isArray(files)) {
+      for (const f of files) filesContext += `\n--- ${f.name} ---\n${f.content}\n`;
+    }
+
+    let conversationContext = '';
+    if (Array.isArray(history) && history.length > 0) {
+      const recent = history.slice(-10);
+      conversationContext = '\n## Recent Conversation:\n';
+      for (const msg of recent) {
+        const role = msg.role === 'ai' ? 'Assistant' : 'User';
+        conversationContext += `${role}: ${msg.content}\n\n`;
+      }
+    }
+
+    const modePrefix = mode ? `[MODE: ${mode}]\n` : '';
+    let fullPrompt = GEMINI_CHAT_SYSTEM + '\n';
+    if (conversationContext) fullPrompt += conversationContext + '\n';
+    if (filesContext) fullPrompt += `--- CURRENT PROJECT FILES ---\n${filesContext}\n--- END FILES ---\n\n`;
+    fullPrompt += `${modePrefix}User request: ${prompt}`;
+
+    const payload = buildBardPayload(fullPrompt);
+
+    const res2 = await fetch(BARD_URL, {
+      method: 'POST',
+      headers: BARD_HEADERS,
+      body: payload,
+    });
+
+    if (!res2.ok) {
+      const errText = await res2.text();
+      console.error('Unofficial Gemini error:', res2.status, errText);
+      return res.status(502).json({ error: `Unofficial Gemini returned status ${res2.status}` });
+    }
+
+    const rawText = await res2.text();
+    const reply = parseBardResponse(rawText) || '[No response from Gemini]';
+
+    let diagnostics = null;
+    const diagMatch = reply.match(/\[DIAGNOSTICS\]\n([\s\S]*?)\n\[\/DIAGNOSTICS\]/);
+    if (diagMatch) {
+      try { diagnostics = JSON.parse(diagMatch[1]); } catch { /* ignore */ }
+    }
+
+    return res.json({ reply, diagnostics });
+  } catch (err) {
+    console.error('gemini-unofficial error:', err);
+    return res.status(500).json({ error: String(err) });
+  }
+});
 
 app.post('/api/gemini-chat', async (req, res) => {
   try {

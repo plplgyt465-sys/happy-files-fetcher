@@ -187,7 +187,7 @@ export function useCodeStore() {
   const [activeFileId, setActiveFileId] = useState(defaultFiles[0].id);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [multiAgentMode, setMultiAgentMode] = useState(true);
-  const [aiProvider, setAiProvider] = useState<AIProvider>('official');
+  const [aiProvider, setAiProvider] = useState<AIProvider>('unofficial');
   const [agentProgress, setAgentProgress] = useState<string | null>(null);
   const [errorLine, setErrorLine] = useState<{ file: string; line: number } | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
@@ -350,7 +350,12 @@ export function useCodeStore() {
       const filesPayload = currentFiles.map((f) => ({ name: f.name, content: f.content }));
 
       const useMulti = multiAgentMode && shouldUseMultiAgent(content);
-      const functionName = useMulti ? 'multi-agent' : 'gemini-chat';
+      let functionName: string;
+      if (aiProvider === 'unofficial') {
+        functionName = 'gemini-unofficial';
+      } else {
+        functionName = useMulti ? 'multi-agent' : 'gemini-chat';
+      }
       const rpcMode = useMulti ? 'multi' : 'single';
 
       if (useMulti) {
@@ -363,7 +368,12 @@ export function useCodeStore() {
         content: m.content,
       }));
 
-      const endpoint = functionName === 'multi-agent' ? '/api/multi-agent' : '/api/gemini-chat';
+      const endpointMap: Record<string, string> = {
+        'multi-agent': '/api/multi-agent',
+        'gemini-unofficial': '/api/gemini-unofficial',
+        'gemini-chat': '/api/gemini-chat',
+      };
+      const endpoint = endpointMap[functionName] || '/api/gemini-unofficial';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
