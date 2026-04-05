@@ -1,13 +1,13 @@
 # VibeCode — Live Coding IDE with AI Agent
 
 ## Project Overview
-A React/TypeScript live coding IDE (similar to StackBlitz) with an AI coding assistant powered by an autonomous ReAct agent loop. Migrated from Lovable/Supabase to Replit.
+A React/TypeScript live coding IDE with an AI coding assistant powered by an autonomous ReAct agent loop. Runs on Replit with a Vite frontend and Express backend.
 
 ## Architecture
 
 ### Frontend (Vite, port 5000)
 - **Framework**: React 18 + TypeScript + Vite
-- **Routing**: `wouter`
+- **Routing**: `react-router-dom`
 - **State**: React `useState`/`useCallback` (no Redux)
 - **UI**: shadcn/ui + Tailwind CSS (dark theme)
 - **Key pages**: `src/pages/Index.tsx` (main IDE layout)
@@ -28,15 +28,15 @@ A React/TypeScript live coding IDE (similar to StackBlitz) with an AI coding ass
 - Falls back to `'official'` if GEMINI_API_KEY is set
 
 ### ReAct Agent Loop (`src/hooks/useAgentLoop.ts`)
-- **States**: `idle → analyzing → reading → planning → editing → verifying → done`
-- **Tools**: `FileList`, `FileRead`, `FileWrite`, `FileCreate`, `SearchCode`, `ErrorParser`, `ProjectInfo`
-- **Max iterations**: 12 (safeguard)
+- **States**: `idle → intent → context → planning → executing → verifying → done`
+- **Tools**: FileList, FileRead, FileWrite, FileCreate, SearchCode, ErrorParser, etc.
+- **Max iterations**: 50 (safeguard)
 - **Runs client-side**: Tool executor reads/writes React state directly
 - **Live feedback**: `onStateChange` and `onStep` callbacks for real-time UI updates
 
 ### Multi-Agent Mode (`/api/multi-agent`)
 - Agent 0 (Orchestrator) plans and delegates to Agents 1–9
-- Each specialized agent handles a domain (UI, logic, tests, etc.)
+- Each specialized agent handles a domain (Setup, Styles, State, Shared, Pages, Data)
 - Triggered for "build", "create", "make" type prompts via `shouldUseMultiAgent()`
 
 ## Key Files
@@ -50,11 +50,8 @@ A React/TypeScript live coding IDE (similar to StackBlitz) with an AI coding ass
 | `src/components/LivePreview.tsx` | Iframe preview with error capture |
 | `vite.config.ts` | Vite config (proxy, aliases) |
 
-## State Exposed from `useCodeStore`
-- `agentCurrentState: AgentState` — Current ReAct loop state
-- `agentSteps: AgentStep[]` — Tool call history for this session
-- `agentProgress: string | null` — Human-readable progress label
-- `diagnostics` — Static analysis errors/warnings
+## Environment Variables / Secrets
+- `GEMINI_API_KEY` — (Optional) Google Gemini API key for official mode. Without it, the app uses the unofficial Bard endpoint automatically.
 
 ## Development
 ```bash
@@ -63,6 +60,6 @@ npm run dev   # Starts both Vite (5000) and Express (3000) via concurrently
 
 ## Notes
 - **No database** — App is entirely client-side state (file contents in memory)
-- **No Supabase** — Fully replaced with Express endpoints
+- **No Supabase** — Removed; app uses Express endpoints for AI calls
 - Express 5 wildcard: use `'/{*splat}'` not `'*'`
-- `lovable-tagger` removed from Vite config
+- `lovable-tagger` and `@supabase/supabase-js` removed
