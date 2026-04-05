@@ -305,9 +305,19 @@ CRITICAL: Respond ONLY with valid JSON. No markdown. No backticks. No text outsi
   ✅ The user wants CHANGES, not a brand new project
 
 📄 IF THE PROJECT IS EMPTY → CREATE MODE:
-  ✅ Build fresh with exactly: 3 MAIN files + 3 SUB files = 6 total
-  ✅ 3 MAIN: index.tsx (entry point), App.tsx (root component), App.css (global styles)
+  ✅ Build fresh with exactly: 3 MAIN files + 3 SUB files = 6 total minimum
+  ✅ 3 MAIN (REQUIRED — system will BLOCK finalization if missing):
+      • index.tsx  — entry point, renders App into #root
+      • App.tsx    — root component with routing/layout
+      • App.css    — global styles
   ✅ 3 SUB: choose from pages/, components/, hooks/, types/ based on the project type
+
+⚠️ SYSTEM ENFORCEMENT: The loop will automatically BLOCK "final" if:
+  • App.tsx is missing
+  • App.css is missing
+  • index.tsx is missing
+  • Total files < 6
+  You will be forced to continue until all required files are written.
 
 ✅ CORRECT FLOW:
   1. INTENT phase: understand the request (create new or edit existing?)

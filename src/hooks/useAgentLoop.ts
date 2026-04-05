@@ -393,16 +393,24 @@ function executeTool(
     const app = workingFiles.find(f => f.name === 'App.tsx');
     const css = workingFiles.find(f => f.name === 'App.css');
 
-    const appHasCounter = app ? (app.content.includes('Count:') || (app.content.includes('count') && app.content.includes('setCount') && !app.content.includes('Route'))) : false;
-    const cssIsDefault = css ? (css.content.includes('.app {') && css.content.length < 500) : false;
+    // MANDATORY: Core files must exist and minimum file count must be met
+    const missingCore: string[] = [];
+    if (!app)   missingCore.push('App.tsx');
+    if (!css)   missingCore.push('App.css');
+    if (!workingFiles.find(f => f.name === 'index.tsx')) missingCore.push('index.tsx');
 
-    const allMet = results.every(r => r.met) && !appHasCounter && !cssIsDefault;
+    const hasMissingCore = missingCore.length > 0;
+    const filesTooFew    = workingFiles.length < minFiles;
+
+    const allMet = results.every(r => r.met) && !hasMissingCore && !filesTooFew;
     const readyToFinalize = allMet && errorCount === 0;
 
     const summary = !readyToFinalize
-      ? appHasCounter ? '❌ FATAL: App.tsx still has placeholder counter — DELETE and rewrite'
-        : cssIsDefault ? '❌ FATAL: App.css still has placeholder styles — DELETE and rewrite'
-        : `❌ NOT ready — ${results.filter(r => !r.met).slice(0, 2).map(r => r.detail).join('; ')}`
+      ? hasMissingCore
+        ? `❌ FATAL: Missing required files: ${missingCore.join(', ')} — write them now`
+        : filesTooFew
+          ? `❌ FATAL: Only ${workingFiles.length} files, need ${minFiles} (3 main + 3 sub files) — keep writing`
+          : `❌ NOT ready — ${results.filter(r => !r.met).slice(0, 2).map(r => r.detail).join('; ')}`
       : '✅ All criteria met — safe to send final';
 
     return {
@@ -507,6 +515,37 @@ export function useAgentLoop() {
 
       // ── FINAL ──────────────────────────────────────────────────────────
       if (decision.type === 'final') {
+        // Safety guard: if we started from empty and have fewer than 6 files, force continuation
+        const minFiles = Number(memory.get('__min_files__') || 6);
+        const hasApp   = workingFiles.some(f => f.name === 'App.tsx');
+        const hasIdx   = workingFiles.some(f => f.name === 'index.tsx');
+        const hasCss   = workingFiles.some(f => f.name === 'App.css');
+        const isCreateMode = !hasApp || !hasIdx || !hasCss || workingFiles.length < minFiles;
+
+        if (isCreateMode) {
+          const missing: string[] = [];
+          if (!hasApp) missing.push('App.tsx');
+          if (!hasIdx) missing.push('index.tsx');
+          if (!hasCss) missing.push('App.css');
+          const forceContinueMsg = JSON.stringify({
+            type: 'tool_result',
+            tool: 'SystemCheck',
+            result: {
+              error: 'PREMATURE FINALIZATION BLOCKED',
+              reason: missing.length > 0
+                ? `Missing required files: ${missing.join(', ')} — you MUST write them before finalizing`
+                : `Only ${workingFiles.length} files exist, need at least ${minFiles} (3 main + 3 sub files)`,
+              current_files: workingFiles.map(f => f.name),
+              required: ['index.tsx', 'App.tsx', 'App.css', '+ 3 sub files'],
+              action: 'Continue writing the missing files. Do NOT send final yet.',
+            },
+          });
+          messages.push({ role: 'assistant', content: JSON.stringify(decision) });
+          messages.push({ role: 'user', content: forceContinueMsg });
+          onStateChange('executing', `⛔ الإنهاء المبكر — ينقص: ${missing.join(', ') || `${minFiles - workingFiles.length} ملفات`}`);
+          continue; // Force another iteration
+        }
+
         onStateChange('done', decision.thought);
 
         if (Array.isArray(decision.files)) {
