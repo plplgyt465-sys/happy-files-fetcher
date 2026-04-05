@@ -63,7 +63,7 @@ const Index = () => {
   const skillSystem = useSkillSystem(toolSystem.executeTool);
 
   // Compute error line for current file
-  const currentErrorLine = errorLine && errorLine.file === activeFile.name ? errorLine.line : null;
+  const currentErrorLine = errorLine && activeFile && errorLine.file === activeFile.name ? errorLine.line : null;
 
   // Track runtime errors from preview
   const handlePreviewError = useCallback((error: string) => {
@@ -198,12 +198,19 @@ const Index = () => {
               onDeleteFile={deleteFile}
             />
             <div className="flex-1 min-h-0">
-              <CodeEditor
-                content={activeFile.content}
-                language={activeFile.language}
-                onChange={(c) => updateFileContent(activeFile.id, c)}
-                errorLine={currentErrorLine}
-              />
+              {activeFile ? (
+                <CodeEditor
+                  content={activeFile.content}
+                  language={activeFile.language}
+                  onChange={(c) => updateFileContent(activeFile.id, c)}
+                  errorLine={currentErrorLine}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 select-none">
+                  <Code2 className="w-12 h-12 opacity-20" />
+                  <p className="text-sm opacity-50">المشروع فارغ — اطلب من الذكاء الاصطناعي بناء مشروع</p>
+                </div>
+              )}
             </div>
             <VersionBar
               canUndo={versionControl.canUndo}
