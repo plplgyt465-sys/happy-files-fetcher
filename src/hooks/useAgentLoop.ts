@@ -7,11 +7,17 @@ import type { AIProvider } from './useCodeStore';
 
 export type AgentState =
   | 'idle'
-  | 'analyzing'
-  | 'reading'
+  | 'intent'
+  | 'context'
   | 'planning'
-  | 'editing'
+  | 'selecting'
+  | 'executing'
+  | 'building'
+  | 'detecting'
+  | 'fixing'
   | 'verifying'
+  | 'memory'
+  | 'finalizing'
   | 'done'
   | 'error';
 
@@ -35,14 +41,60 @@ interface AgentDecision {
   tool?: string;
   input?: Record<string, unknown>;
   thought?: string;
+  phase?: string;
   state?: string;
   response?: string;
   files?: { name: string; content: string }[];
 }
 
-const MAX_ITERATIONS = 20;
+const MAX_ITERATIONS = 50;
 
-// ── Language helper ───────────────────────────────────────────────────────
+// ── State label mapping ────────────────────────────────────────────────────
+
+export const STATE_LABELS: Record<AgentState, string> = {
+  idle:       'Idle',
+  intent:     '🧠 يفهم الطلب...',
+  context:    '📂 يجمع السياق...',
+  planning:   '📋 يخطط...',
+  selecting:  '🔧 يختار الأدوات...',
+  executing:  '⚙️ ينفذ ويكتب الملفات...',
+  building:   '🏗️ يتحقق من البنية...',
+  detecting:  '🔍 يكشف الأخطاء...',
+  fixing:     '🩺 يصلح تلقائياً...',
+  verifying:  '✅ يتحقق من النتيجة...',
+  memory:     '🧠 يحدث الذاكرة...',
+  finalizing: '🏁 يُنهي المهمة...',
+  done:       '✅ اكتملت المهمة',
+  error:      '❌ خطأ',
+};
+
+function mapPhase(p: string | undefined): AgentState {
+  const map: Record<string, AgentState> = {
+    intent:     'intent',
+    context:    'context',
+    planning:   'planning',
+    selecting:  'selecting',
+    executing:  'executing',
+    execution:  'executing',
+    building:   'building',
+    detecting:  'detecting',
+    parsing:    'detecting',
+    fixing:     'fixing',
+    fix:        'fixing',
+    verifying:  'verifying',
+    verify:     'verifying',
+    memory:     'memory',
+    finalizing: 'finalizing',
+    // legacy
+    analyzing:  'intent',
+    reading:    'context',
+    editing:    'executing',
+    done:       'done',
+  };
+  return map[p?.toLowerCase() || ''] || 'intent';
+}
+
+// ── Language helper ────────────────────────────────────────────────────────
 
 function getLangFromExt(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -53,27 +105,43 @@ function getLangFromExt(name: string): string {
   return map[ext] || 'plaintext';
 }
 
-// ── Tool executor (client-side, reads from live files) ────────────────────
+// ── Glob pattern → RegExp ──────────────────────────────────────────────────
+
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\x00')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\x00/g, '.*')
+    .replace(/\?/g, '[^/]');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+// ── Tool executor ──────────────────────────────────────────────────────────
 
 function executeTool(
   tool: string,
   input: Record<string, unknown>,
   workingFiles: CodeFile[],
   diagnostics: Diagnostic[],
+  memory: Map<string, string>,
 ): unknown {
   const t = tool.toLowerCase();
 
+  // ── FileList ──────────────────────────────────────────────────────────
   if (t === 'filelist') {
     return {
       files: workingFiles.map(f => ({
         name: f.name,
         language: f.language,
         lines: f.content.split('\n').length,
+        size: f.content.length,
       })),
       totalFiles: workingFiles.length,
     };
   }
 
+  // ── FileRead ──────────────────────────────────────────────────────────
   if (t === 'fileread') {
     const fileName = String(input.fileName || input.file || input.path || '');
     const file = workingFiles.find(f => f.name === fileName);
@@ -81,7 +149,8 @@ function executeTool(
     return { fileName, content: file.content, lines: file.content.split('\n').length };
   }
 
-  if (t === 'filewrite' || t === 'filecreate' || t === 'fileedit') {
+  // ── FileWrite / FileCreate ────────────────────────────────────────────
+  if (t === 'filewrite' || t === 'filecreate') {
     const fileName = String(input.fileName || input.name || input.file || '');
     const content = String(input.content || '');
     if (!fileName) return { error: 'fileName is required' };
@@ -90,6 +159,19 @@ function executeTool(
     return { success: true, fileName, action: exists ? 'updated' : 'created', lines: content.split('\n').length };
   }
 
+  // ── FileEdit ──────────────────────────────────────────────────────────
+  if (t === 'fileedit') {
+    const fileName = String(input.fileName || input.name || input.file || '');
+    const oldString = String(input.oldString || input.old || '');
+    const newString = String(input.newString || input.new || '');
+    if (!fileName) return { error: 'fileName is required' };
+    const file = workingFiles.find(f => f.name === fileName);
+    if (!file) return { error: `File '${fileName}' not found` };
+    if (!file.content.includes(oldString)) return { error: `oldString not found in '${fileName}'` };
+    return { success: true, fileName, action: 'edited', replaced: oldString.slice(0, 60) + '...' };
+  }
+
+  // ── FileDelete ────────────────────────────────────────────────────────
   if (t === 'filedelete') {
     const fileName = String(input.fileName || input.name || input.file || '');
     if (!fileName) return { error: 'fileName is required' };
@@ -98,19 +180,76 @@ function executeTool(
     return { success: true, fileName, action: 'deleted' };
   }
 
-  if (t === 'errorparser') {
+  // ── GlobTool ──────────────────────────────────────────────────────────
+  if (t === 'globtool' || t === 'glob') {
+    const pattern = String(input.pattern || input.glob || '**/*');
+    let regex: RegExp;
+    try { regex = globToRegex(pattern); }
+    catch { regex = /.*/; }
+    const matches = workingFiles.filter(f => regex.test(f.name));
     return {
-      total: diagnostics.length,
-      errors: diagnostics.filter(d => d.severity === 'error').map(d => ({
-        file: d.file, line: d.line, column: d.column, message: d.message, type: d.type,
-      })),
-      warnings: diagnostics.filter(d => d.severity === 'warning').map(d => ({
-        file: d.file, line: d.line, message: d.message,
-      })),
-      hasErrors: diagnostics.some(d => d.severity === 'error'),
+      pattern,
+      matches: matches.map(f => ({ name: f.name, language: f.language, lines: f.content.split('\n').length })),
+      count: matches.length,
     };
   }
 
+  // ── GrepTool ──────────────────────────────────────────────────────────
+  if (t === 'greptool' || t === 'grep') {
+    const query = String(input.query || input.search || '').toLowerCase();
+    if (!query) return { error: 'query is required' };
+    const filePattern = String(input.filePattern || input.pattern || '');
+    let targetFiles = workingFiles;
+    if (filePattern) {
+      try {
+        const r = globToRegex(filePattern);
+        targetFiles = workingFiles.filter(f => r.test(f.name));
+      } catch { /* use all files */ }
+    }
+    const results: { file: string; line: number; content: string }[] = [];
+    for (const f of targetFiles) {
+      const lines = f.content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(query)) {
+          results.push({ file: f.name, line: i + 1, content: lines[i].trim() });
+          if (results.length >= 60) break;
+        }
+      }
+      if (results.length >= 60) break;
+    }
+    return { query, results, count: results.length };
+  }
+
+  // ── ErrorParser ───────────────────────────────────────────────────────
+  if (t === 'errorparser') {
+    const errors = diagnostics.filter(d => d.severity === 'error');
+    const warnings = diagnostics.filter(d => d.severity === 'warning');
+    return {
+      total: diagnostics.length,
+      errorCount: errors.length,
+      warningCount: warnings.length,
+      hasErrors: errors.length > 0,
+      errors: errors.map(d => ({ file: d.file, line: d.line, column: d.column, message: d.message, type: d.type })),
+      warnings: warnings.map(d => ({ file: d.file, line: d.line, message: d.message })),
+    };
+  }
+
+  // ── TSChecker ─────────────────────────────────────────────────────────
+  if (t === 'tschecker') {
+    const fileName = String(input.fileName || input.file || '');
+    const fileDiags = fileName
+      ? diagnostics.filter(d => d.file === fileName)
+      : diagnostics;
+    return {
+      file: fileName || 'all files',
+      errors: fileDiags.filter(d => d.severity === 'error').map(d => ({ line: d.line, column: d.column, message: d.message, type: d.type })),
+      warnings: fileDiags.filter(d => d.severity === 'warning').map(d => ({ line: d.line, column: d.column, message: d.message })),
+      hasErrors: fileDiags.some(d => d.severity === 'error'),
+      total: fileDiags.length,
+    };
+  }
+
+  // ── SearchCode ────────────────────────────────────────────────────────
   if (t === 'searchcode') {
     const query = String(input.query || input.search || '').toLowerCase();
     if (!query) return { error: 'query is required' };
@@ -120,14 +259,15 @@ function executeTool(
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].toLowerCase().includes(query)) {
           results.push({ file: f.name, line: i + 1, content: lines[i].trim() });
-          if (results.length >= 20) break;
+          if (results.length >= 30) break;
         }
       }
-      if (results.length >= 20) break;
+      if (results.length >= 30) break;
     }
     return { query, results, count: results.length };
   }
 
+  // ── ProjectInfo ───────────────────────────────────────────────────────
   if (t === 'projectinfo') {
     const byType: Record<string, number> = {};
     let totalLines = 0;
@@ -137,7 +277,7 @@ function executeTool(
       totalLines += f.content.split('\n').length;
     }
     return {
-      files: workingFiles.map(f => ({ name: f.name, language: f.language })),
+      files: workingFiles.map(f => ({ name: f.name, language: f.language, lines: f.content.split('\n').length })),
       totalFiles: workingFiles.length,
       totalLines,
       byType,
@@ -146,34 +286,43 @@ function executeTool(
     };
   }
 
-  return { error: `Unknown tool: ${tool}` };
+  // ── MemoryStore ───────────────────────────────────────────────────────
+  if (t === 'memorystore' || t === 'memoryset') {
+    const key = String(input.key || '');
+    const value = String(input.value || '');
+    if (!key) return { error: 'key is required' };
+    memory.set(key, value);
+    return { success: true, key, stored: true, totalKeys: memory.size };
+  }
+
+  // ── MemoryRead ────────────────────────────────────────────────────────
+  if (t === 'memoryread' || t === 'memoryget' || t === 'memoryrecall') {
+    const key = String(input.key || '');
+    if (!key) {
+      const all: Record<string, string> = {};
+      memory.forEach((v, k) => { all[k] = v; });
+      return { all, count: memory.size };
+    }
+    const value = memory.get(key);
+    if (value === undefined) return { error: `No memory found for key '${key}'` };
+    return { key, value };
+  }
+
+  // ── PlanCreate ────────────────────────────────────────────────────────
+  if (t === 'plancreate' || t === 'plan') {
+    const steps = Array.isArray(input.steps) ? (input.steps as string[]) : [];
+    memory.set('__plan__', JSON.stringify(steps));
+    return { success: true, plan: steps, stepsCount: steps.length, message: 'Plan recorded' };
+  }
+
+  return { error: `Unknown tool: '${tool}'. Available: FileList, FileRead, FileWrite, FileEdit, FileDelete, GlobTool, GrepTool, ErrorParser, TSChecker, ProjectInfo, SearchCode, MemoryStore, MemoryRead, PlanCreate` };
 }
-
-// ── State label mapping ────────────────────────────────────────────────────
-
-function mapState(s: string | undefined): AgentState {
-  const map: Record<string, AgentState> = {
-    analyzing: 'analyzing', reading: 'reading', planning: 'planning',
-    editing: 'editing', verifying: 'verifying', done: 'done',
-  };
-  return map[s?.toLowerCase() || ''] || 'analyzing';
-}
-
-export const STATE_LABELS: Record<AgentState, string> = {
-  idle: 'Idle',
-  analyzing: '🧠 يحلل الطلب...',
-  reading: '📖 يقرأ الملفات...',
-  planning: '📋 يخطط...',
-  editing: '✏️ يعدّل الكود...',
-  verifying: '🔍 يتحقق من الأخطاء...',
-  done: '✅ اكتمل',
-  error: '❌ خطأ',
-};
 
 // ── Main hook ──────────────────────────────────────────────────────────────
 
 export function useAgentLoop() {
   const abortRef = useRef(false);
+  const memoryRef = useRef<Map<string, string>>(new Map());
 
   const run = useCallback(async (
     userPrompt: string,
@@ -190,11 +339,11 @@ export function useAgentLoop() {
     ];
 
     const steps: AgentStep[] = [];
-    // Working copy of files — updated as FileWrite calls come in
     let workingFiles: CodeFile[] = files.map(f => ({ ...f }));
     const fileOps: FileOperation[] = [];
+    const memory = memoryRef.current;
 
-    onStateChange('analyzing', 'يحلل الطلب...');
+    onStateChange('intent', 'يحلل الطلب...');
     let iterations = 0;
 
     while (iterations < MAX_ITERATIONS) {
@@ -223,7 +372,7 @@ export function useAgentLoop() {
         return { text: `Agent error: ${String(err)}`, fileOps, steps };
       }
 
-      // ── FINAL ────────────────────────────────────────────────────────────
+      // ── FINAL ──────────────────────────────────────────────────────────
       if (decision.type === 'final') {
         onStateChange('done', decision.thought);
 
@@ -231,7 +380,6 @@ export function useAgentLoop() {
           for (const f of decision.files) {
             if (!f.name || !f.content) continue;
             fileOps.push({ filename: f.name, content: f.content, type: 'create' });
-            // Sync to working files
             const idx = workingFiles.findIndex(w => w.name === f.name);
             if (idx >= 0) {
               workingFiles[idx] = { ...workingFiles[idx], content: f.content };
@@ -245,41 +393,40 @@ export function useAgentLoop() {
             }
           }
         }
-
-        return { text: decision.response || '✅ تم التنفيذ بنجاح', fileOps, steps };
+        return { text: decision.response || '✅ اكتملت المهمة بنجاح', fileOps, steps };
       }
 
-      // ── TOOL CALL ─────────────────────────────────────────────────────────
+      // ── TOOL CALL ───────────────────────────────────────────────────────
       if (decision.type === 'tool' && decision.tool) {
-        const agentState = mapState(decision.state);
-        onStateChange(agentState, decision.thought);
+        const phase = mapPhase(decision.phase || decision.state);
+        onStateChange(phase, decision.thought);
 
         const t0 = Date.now();
         const toolInput = decision.input || {};
-        const toolResult = executeTool(decision.tool, toolInput, workingFiles, diagnostics);
+        const toolName = decision.tool;
+
+        // Execute tool client-side
+        const toolResult = executeTool(toolName, toolInput, workingFiles, diagnostics, memory);
         const durationMs = Date.now() - t0;
 
         const step: AgentStep = {
-          tool: decision.tool,
+          tool: toolName,
           input: toolInput,
           result: toolResult,
           thought: decision.thought || '',
-          state: agentState,
+          state: phase,
           durationMs,
         };
         steps.push(step);
         onStep(step);
 
-        // If it's a FileWrite/FileCreate/FileEdit, update working files AND add to fileOps immediately
-        if (
-          decision.tool.toLowerCase() === 'filewrite' ||
-          decision.tool.toLowerCase() === 'filecreate' ||
-          decision.tool.toLowerCase() === 'fileedit'
-        ) {
+        const tl = toolName.toLowerCase();
+
+        // FileWrite / FileCreate — apply to working files AND accumulate fileOps
+        if (tl === 'filewrite' || tl === 'filecreate') {
           const fileName = String(toolInput.fileName || toolInput.name || toolInput.file || '');
           const content = String(toolInput.content || '');
           if (fileName && content) {
-            // Update working files so the agent sees the changes in subsequent steps
             const idx = workingFiles.findIndex(w => w.name === fileName);
             if (idx >= 0) {
               workingFiles[idx] = { ...workingFiles[idx], content };
@@ -291,7 +438,6 @@ export function useAgentLoop() {
                 content,
               });
             }
-            // Also accumulate into fileOps so applyFileOperations() applies them to the editor
             const existingOpIdx = fileOps.findIndex(op => op.filename === fileName);
             if (existingOpIdx >= 0) {
               fileOps[existingOpIdx] = { filename: fileName, content, type: 'update' };
@@ -301,8 +447,28 @@ export function useAgentLoop() {
           }
         }
 
-        // If it's FileDelete, mark it in fileOps
-        if (decision.tool.toLowerCase() === 'filedelete') {
+        // FileEdit — apply in-place surgical replacement
+        if (tl === 'fileedit') {
+          const fileName = String(toolInput.fileName || toolInput.name || toolInput.file || '');
+          const oldString = String(toolInput.oldString || toolInput.old || '');
+          const newString = String(toolInput.newString || toolInput.new || '');
+          if (fileName && oldString !== undefined) {
+            const idx = workingFiles.findIndex(w => w.name === fileName);
+            if (idx >= 0) {
+              const newContent = workingFiles[idx].content.replace(oldString, newString);
+              workingFiles[idx] = { ...workingFiles[idx], content: newContent };
+              const existingOpIdx = fileOps.findIndex(op => op.filename === fileName);
+              if (existingOpIdx >= 0) {
+                fileOps[existingOpIdx] = { filename: fileName, content: newContent, type: 'update' };
+              } else {
+                fileOps.push({ filename: fileName, content: newContent, type: 'update' });
+              }
+            }
+          }
+        }
+
+        // FileDelete
+        if (tl === 'filedelete') {
           const fileName = String(toolInput.fileName || toolInput.name || toolInput.file || '');
           if (fileName) {
             workingFiles = workingFiles.filter(w => w.name !== fileName);
@@ -315,16 +481,17 @@ export function useAgentLoop() {
           role: 'assistant',
           content: JSON.stringify({
             type: 'tool',
-            tool: decision.tool,
+            tool: toolName,
             input: toolInput,
             thought: decision.thought,
+            phase: decision.phase,
           }),
         });
         messages.push({
           role: 'user',
           content: JSON.stringify({
             type: 'tool_result',
-            tool: decision.tool,
+            tool: toolName,
             result: toolResult,
             success: true,
           }),
@@ -332,8 +499,7 @@ export function useAgentLoop() {
       }
     }
 
-    // Max iterations reached — return whatever file ops we have
-    onStateChange('done', 'اكتمل (حد الدورات)');
+    onStateChange('done', 'اكتمل (وصل الحد الأقصى للدورات)');
     return { text: '✅ اكتمل التنفيذ', fileOps, steps };
   }, []);
 
@@ -341,5 +507,9 @@ export function useAgentLoop() {
     abortRef.current = true;
   }, []);
 
-  return { run, abort };
+  const clearMemory = useCallback(() => {
+    memoryRef.current.clear();
+  }, []);
+
+  return { run, abort, clearMemory };
 }

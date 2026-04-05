@@ -201,7 +201,7 @@ export function useCodeStore() {
     {
       id: '1',
       role: 'ai',
-      content: '👋 Welcome to **VibeCode**! Powered by **10 AI agents**, **44 tools** & **16 skills**!\n\n🛠️ **44 Tools**: FileRead, FileWrite, FileEdit, Grep, Glob, LSP, CodeComplexity, TaskCreate, AgentTool, TeamCreate, BashTool, MemoryStore, and more!\n\n⚡ **16 Skills**: Scaffold, ComponentGen, CodeReview, SecurityScan, SearchReplace, TestGen, and more!\n\nClick the 🔧 button in the toolbar to browse all tools & skills.\n\nTry: "Build an e-commerce store" or "Create a portfolio website"!',
+      content: '👋 مرحباً بك في **VibeCode**!\n\n🤖 **Ω — Advanced Autonomous Coding Agent**\nيفهم → يخطط → ينفذ → يتحقق → يصلّح → يكرر\n\n🔁 **12 مرحلة ذكاء متكاملة:**\n🧠 Intent → 📂 Context → 📋 Planning → 🔧 Selecting → ⚙️ Executing → 🏗️ Building → 🔍 Detecting → 🩺 Fixing → ✅ Verifying → 🧠 Memory → 🏁 Finalizing\n\n🛠️ **14 أداة**: FileWrite, FileEdit, GlobTool, GrepTool, TSChecker, ErrorParser, MemoryStore, PlanCreate, والمزيد!\n\n⚡ ينشئ **عدد غير محدود** من الملفات، يصلح الأخطاء تلقائياً، ويتذكر السياق.\n\nجرّب: "أنشئ متجر إلكتروني" أو "ابنِ تطبيق todo كامل"!',
       timestamp: new Date(),
     },
   ]);
@@ -354,7 +354,7 @@ export function useCodeStore() {
     setIsAiLoading(true);
     setAgentProgress(null);
     setAgentSteps([]);
-    setAgentCurrentState('analyzing');
+    setAgentCurrentState('intent');
 
     let currentFiles: CodeFile[] = [];
     setFiles((prev) => { currentFiles = prev; return prev; });

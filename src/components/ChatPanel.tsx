@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Loader2, FilePlus, FileEdit, Cpu, Users, Wrench, CheckCircle, XCircle, Zap, Globe, Eye, Pencil, Search, ShieldCheck, Brain } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Loader2, FilePlus, FileEdit, Cpu, Users, Wrench, CheckCircle, XCircle, Zap, Globe, Eye, Pencil, Search, ShieldCheck, Brain, Layers, Hammer, Bug, Wand2, Database, Flag, ListChecks } from 'lucide-react';
 import type { ChatMessage, AgentLog, ToolCallResult, AIProvider, AgentState, AgentStep } from '@/hooks/useCodeStore';
 import { STATE_LABELS } from '@/hooks/useAgentLoop';
 
@@ -38,23 +38,41 @@ const AgentLogsDisplay = ({ logs }: { logs: AgentLog[] }) => (
 );
 
 const STATE_ICONS: Partial<Record<AgentState, React.ReactNode>> = {
-  analyzing: <Brain className="w-3.5 h-3.5 text-violet-400" />,
-  reading:   <Eye className="w-3.5 h-3.5 text-blue-400" />,
-  planning:  <Cpu className="w-3.5 h-3.5 text-yellow-400" />,
-  editing:   <Pencil className="w-3.5 h-3.5 text-cyan-400" />,
-  verifying: <ShieldCheck className="w-3.5 h-3.5 text-green-400" />,
-  done:      <CheckCircle className="w-3.5 h-3.5 text-green-400" />,
-  error:     <XCircle className="w-3.5 h-3.5 text-red-400" />,
-};
+  intent:     <Brain className="w-3.5 h-3.5 text-violet-400" />,
+  context:    <Eye className="w-3.5 h-3.5 text-blue-400" />,
+  planning:   <ListChecks className="w-3.5 h-3.5 text-yellow-400" />,
+  selecting:  <Layers className="w-3.5 h-3.5 text-orange-400" />,
+  executing:  <Pencil className="w-3.5 h-3.5 text-cyan-400" />,
+  building:   <Hammer className="w-3.5 h-3.5 text-amber-400" />,
+  detecting:  <Bug className="w-3.5 h-3.5 text-red-400" />,
+  fixing:     <Wand2 className="w-3.5 h-3.5 text-pink-400" />,
+  verifying:  <ShieldCheck className="w-3.5 h-3.5 text-green-400" />,
+  memory:     <Database className="w-3.5 h-3.5 text-indigo-400" />,
+  finalizing: <Flag className="w-3.5 h-3.5 text-emerald-400" />,
+  done:       <CheckCircle className="w-3.5 h-3.5 text-green-400" />,
+  error:      <XCircle className="w-3.5 h-3.5 text-red-400" />,
+  // legacy
+  analyzing:  <Brain className="w-3.5 h-3.5 text-violet-400" />,
+  reading:    <Eye className="w-3.5 h-3.5 text-blue-400" />,
+  editing:    <Pencil className="w-3.5 h-3.5 text-cyan-400" />,
+} as Partial<Record<AgentState, React.ReactNode>>;
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
-  FileList:   <Search className="w-3 h-3 text-blue-400" />,
-  FileRead:   <Eye className="w-3 h-3 text-blue-400" />,
-  FileWrite:  <Pencil className="w-3 h-3 text-cyan-400" />,
-  FileCreate: <FilePlus className="w-3 h-3 text-green-400" />,
-  ErrorParser:<ShieldCheck className="w-3 h-3 text-orange-400" />,
-  SearchCode: <Search className="w-3 h-3 text-purple-400" />,
-  ProjectInfo:<Cpu className="w-3 h-3 text-yellow-400" />,
+  FileList:    <Search className="w-3 h-3 text-blue-400" />,
+  FileRead:    <Eye className="w-3 h-3 text-blue-400" />,
+  FileWrite:   <Pencil className="w-3 h-3 text-cyan-400" />,
+  FileCreate:  <FilePlus className="w-3 h-3 text-green-400" />,
+  FileEdit:    <FileEdit className="w-3 h-3 text-amber-400" />,
+  FileDelete:  <XCircle className="w-3 h-3 text-red-400" />,
+  GlobTool:    <Layers className="w-3 h-3 text-orange-400" />,
+  GrepTool:    <Search className="w-3 h-3 text-violet-400" />,
+  ErrorParser: <ShieldCheck className="w-3 h-3 text-orange-400" />,
+  TSChecker:   <Bug className="w-3 h-3 text-red-400" />,
+  SearchCode:  <Search className="w-3 h-3 text-purple-400" />,
+  ProjectInfo: <Cpu className="w-3 h-3 text-yellow-400" />,
+  MemoryStore: <Database className="w-3 h-3 text-indigo-400" />,
+  MemoryRead:  <Database className="w-3 h-3 text-indigo-300" />,
+  PlanCreate:  <ListChecks className="w-3 h-3 text-yellow-400" />,
 };
 
 const ChatPanel = ({ messages, onSendMessage, isLoading, multiAgentMode, onToggleMultiAgent, agentProgress, agentCurrentState = 'idle', agentSteps = [], aiProvider = 'official', onChangeProvider }: ChatPanelProps) => {
