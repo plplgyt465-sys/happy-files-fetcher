@@ -389,8 +389,21 @@ function executeTool(
       results.push({ criterion, met: workingFiles.length >= minFiles, detail: `${workingFiles.length} files` });
     }
 
-    const allMet = results.every(r => r.met);
+    // ──── CHECK IF DEFAULTS ARE DELETED OR REWRITTEN ────────────────────
+    const app = workingFiles.find(f => f.name === 'App.tsx');
+    const css = workingFiles.find(f => f.name === 'App.css');
+
+    const appHasCounter = app ? (app.content.includes('Count:') || (app.content.includes('count') && app.content.includes('setCount') && !app.content.includes('Route'))) : false;
+    const cssIsDefault = css ? (css.content.includes('.app {') && css.content.length < 500) : false;
+
+    const allMet = results.every(r => r.met) && !appHasCounter && !cssIsDefault;
     const readyToFinalize = allMet && errorCount === 0;
+
+    const summary = !readyToFinalize
+      ? appHasCounter ? '❌ FATAL: App.tsx still has placeholder counter — DELETE and rewrite'
+        : cssIsDefault ? '❌ FATAL: App.css still has placeholder styles — DELETE and rewrite'
+        : `❌ NOT ready — ${results.filter(r => !r.met).slice(0, 2).map(r => r.detail).join('; ')}`
+      : '✅ All criteria met — safe to send final';
 
     return {
       criteria: results,
@@ -398,9 +411,7 @@ function executeTool(
       errors: errorCount,
       file_count: workingFiles.length,
       ready_to_finalize: readyToFinalize,
-      summary: readyToFinalize
-        ? '✅ All criteria met — safe to send final'
-        : `❌ NOT ready — ${results.filter(r => !r.met).map(r => r.detail).join('; ')}`,
+      summary,
     };
   }
 
