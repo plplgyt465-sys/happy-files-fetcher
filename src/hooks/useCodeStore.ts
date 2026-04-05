@@ -44,80 +44,7 @@ export interface ChatMessage {
   mode?: 'CREATE' | 'EDIT' | 'FIX';
 }
 
-const defaultAppTsx = `import React, { useState } from 'react';
-import './App.css';
-
-const App: React.FC = () => {
-  const [count, setCount] = useState(0);
-
-  return (
-    <div className="app">
-      <h1>Hello, Vibe Coder! 🚀</h1>
-      <p>Start editing to see live changes</p>
-      <button onClick={() => setCount(c => c + 1)}>
-        Count: {count}
-      </button>
-    </div>
-  );
-};
-
-export default App;`;
-
-const defaultAppCss = `.app {
-  text-align: center;
-  padding: 2rem;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #0f172a, #1e293b);
-  color: #e2e8f0;
-  font-family: 'Inter', sans-serif;
-}
-
-h1 {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-  background: linear-gradient(90deg, #22d3ee, #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-p {
-  color: #94a3b8;
-  margin-bottom: 2rem;
-}
-
-button {
-  padding: 0.75rem 2rem;
-  background: #22d3ee;
-  color: #0f172a;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(34, 211, 238, 0.3);
-}`;
-
-const defaultIndexTsx = `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const root = ReactDOM.createRoot(document.getElementById('root')!);
-root.render(<App />);`;
-
-const defaultFiles: CodeFile[] = [
-  { id: '1', name: 'App.tsx', language: 'typescript', content: defaultAppTsx },
-  { id: '2', name: 'App.css', language: 'css', content: defaultAppCss },
-  { id: '3', name: 'index.tsx', language: 'typescript', content: defaultIndexTsx },
-];
+const defaultFiles: CodeFile[] = [];
 
 function getLanguageFromFilename(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -188,7 +115,7 @@ export type AIProvider = 'official' | 'unofficial';
 
 export function useCodeStore() {
   const [files, setFiles] = useState<CodeFile[]>(defaultFiles);
-  const [activeFileId, setActiveFileId] = useState(defaultFiles[0].id);
+  const [activeFileId, setActiveFileId] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [multiAgentMode, setMultiAgentMode] = useState(true);
   const [aiProvider, setAiProvider] = useState<AIProvider>('unofficial');
@@ -210,7 +137,7 @@ export function useCodeStore() {
   const agentLoop = useAgentLoop();
   const diagnostics = useStaticAnalysis(files);
 
-  const activeFile = files.find((f) => f.id === activeFileId) || files[0];
+  const activeFile = files.find((f) => f.id === activeFileId) || files[0] || { id: '', name: '', language: 'typescript', content: '' };
 
   const updateFileContent = useCallback((fileId: string, content: string) => {
     setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, content } : f)));
