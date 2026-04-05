@@ -1,12 +1,26 @@
-const App = () => {
-  return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "white", background: "#0f172a" }}>
-      <div>
-        <h1 style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>جاهز للبناء</h1>
-        <p>ابدأ بإضافة ملفات وواجهة جديدة.</p>
-      </div>
-    </div>
-  );
-};
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import Index from "./pages/Index.tsx";
+import NotFound from "./pages/NotFound.tsx";
+
+const queryClient = new QueryClient();
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Index />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
 
 export default App;
