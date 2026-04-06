@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import type { CodeFile, FileOperation } from './useCodeStore';
 import type { Diagnostic } from './useStaticAnalysis';
 import type { AIProvider } from './useCodeStore';
@@ -119,6 +120,19 @@ function globToRegex(pattern: string): RegExp {
     .replace(/\x00/g, '.*')
     .replace(/\?/g, '[^/]');
   return new RegExp(`^${escaped}$`, 'i');
+}
+
+async function invokeEdgeFunction<T>(
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
+
+  if (error) {
+    throw new Error(error.message || `Edge function '${functionName}' failed`);
+  }
+
+  return data as T;
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
@@ -503,21 +517,13 @@ export function useAgentLoop() {
 
       let decision: AgentDecision;
       try {
-        const res = await fetch('/api/agent/think', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages,
-            files: workingFiles.map(f => ({ name: f.name, content: f.content })),
-            diagnostics,
-            provider,
-          }),
+        decision = await invokeEdgeFunction<AgentDecision>('gemini-unofficial', {
+          action: 'agent-think',
+          messages,
+          files: workingFiles.map(f => ({ name: f.name, content: f.content })),
+          diagnostics,
+          provider,
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Server error ${res.status}`);
-        }
-        decision = await res.json();
       } catch (err) {
         onStateChange('error', String(err));
         return { text: `Agent error: ${String(err)}`, fileOps, steps };
@@ -642,26 +648,21 @@ export function useAgentLoop() {
         // ── END PHASE LOCK ───────────────────────────────────────────────────
 
         if (tl0 === 'webfetchtool' || tl0 === 'webfetch') {
-          // ── WebFetchTool — calls server /api/web-fetch ─────────────────
           try {
-            const fetchRes = await fetch('/api/web-fetch', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: toolInput.url, prompt: toolInput.prompt }),
+            toolResult = await invokeEdgeFunction<Record<string, unknown>>('gemini-unofficial', {
+              action: 'web-fetch',
+              url: toolInput.url,
+              prompt: toolInput.prompt,
             });
-            toolResult = fetchRes.ok ? await fetchRes.json() : { error: `HTTP ${fetchRes.status}` };
           } catch (e) {
             toolResult = { error: String(e) };
           }
         } else if (tl0 === 'websearchtool' || tl0 === 'websearch') {
-          // ── WebSearchTool — calls server /api/web-search ───────────────
           try {
-            const searchRes = await fetch('/api/web-search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query: toolInput.query }),
+            toolResult = await invokeEdgeFunction<Record<string, unknown>>('gemini-unofficial', {
+              action: 'web-search',
+              query: toolInput.query,
             });
-            toolResult = searchRes.ok ? await searchRes.json() : { error: `HTTP ${searchRes.status}` };
           } catch (e) {
             toolResult = { error: String(e) };
           }
