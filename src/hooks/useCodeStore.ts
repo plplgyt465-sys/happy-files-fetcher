@@ -3,6 +3,7 @@ import { useVersionControl } from './useVersionControl';
 import type { Dependency } from '@/components/DependencyManager';
 import { useAgentLoop, type AgentState, type AgentStep, STATE_LABELS } from './useAgentLoop';
 import { useStaticAnalysis } from './useStaticAnalysis';
+import { supabase } from '@/integrations/supabase/client';
 
 export type { AgentState, AgentStep };
 
@@ -342,25 +343,23 @@ export function useCodeStore() {
 
     try {
       // ── Multi-agent mode (orchestrator + parallel agents) ──────────────────
-      if (multiAgentMode && shouldUseMultiAgent(content)) {
+      if (aiProvider === 'official' && multiAgentMode && shouldUseMultiAgent(content)) {
         setAgentProgress('🤖 Agent 0 (Orchestrator) is planning...');
 
         const recentHistory = chatMessages.slice(-20).map(m => ({ role: m.role, content: m.content }));
-        const response = await fetch('/api/multi-agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const { data, error } = await supabase.functions.invoke('multi-agent', {
+          body: {
             prompt: content,
             files: currentFiles.map(f => ({ name: f.name, content: f.content })),
             mode: 'multi',
             history: recentHistory,
-          }),
+          },
         });
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData?.error || 'Multi-agent error');
+
+        if (error) {
+          throw new Error(error.message || 'Multi-agent error');
         }
-        const data = await response.json();
+
         const rawReply = data?.reply || '';
         const agentLogs: AgentLog[] = data?.agentLogs || [];
         const { text, fileOps } = parseFileOperations(rawReply);
